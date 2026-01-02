@@ -68,26 +68,80 @@ Load domain knowledge from an available skill.
 
 ## Configuration
 
+### For Bundle Authors
+
+To include skills capability in your custom bundle, use the behavior pattern:
+
+```yaml
+includes:
+  - bundle: git+https://github.com/microsoft/amplifier-module-tool-skills@main#subdirectory=behaviors/skills.yaml
+```
+
+Or if you want to customize the configuration:
+
+```yaml
+tools:
+  - module: tool-skills
+    source: git+https://github.com/microsoft/amplifier-module-tool-skills@main
+    config:
+      skills_dirs:
+        - /custom/path/to/skills
+```
+
+### Using the Skills Bundle
+
+You can use the complete skills bundle directly:
+
+```bash
+# Add the bundle
+amplifier bundle add git+https://github.com/microsoft/amplifier-module-tool-skills@main
+
+# Use it
+amplifier bundle use skills
+amplifier run "List available skills"
+```
+
+### Bundle Configuration
+
+Configure skills in your bundle definition:
+
+```yaml
+bundle:
+  name: my-bundle
+  version: 1.0.0
+
+includes:
+  - bundle: git+https://github.com/microsoft/amplifier-foundation@main
+  - bundle: skills:behaviors/skills
+
+tools:
+  - module: tool-skills
+    config:
+      skills_dirs:
+        - ~/.amplifier/skills
+        - ./project-skills
+```
+
 ### Recommended: Global Configuration
 
-Add to `~/.amplifier/settings.yaml` to make skills available to **all profiles**:
+Add to `~/.amplifier/settings.yaml` to make skills available to **all bundles**:
 
 ```yaml
 # Module source
 sources:
   tool-skills: git+https://github.com/microsoft/amplifier-module-tool-skills@main
 
-# Skills directories - applies to all profiles
+# Skills directories - applies to all bundles
 skills:
   dirs:
     - ~/anthropic-skills/skills  # Optional: Anthropic's skills collection
     - ~/.amplifier/skills         # User-specific skills
 ```
 
-Then add the tool to any profile:
+Then add the tool to any bundle:
 
 ```yaml
-# In any profile
+# In any bundle
 tools:
   - module: tool-skills  # No config needed - reads from settings.yaml
 ```
@@ -102,43 +156,9 @@ skills:
     - .amplifier/skills  # Project-specific skills (merged with global)
 ```
 
-### Per-Profile Override
-
-Override skills directories for a specific profile:
-
-```yaml
-tools:
-  - module: tool-skills
-    config:
-      skills_dirs:  # Override - ignores settings.yaml for this profile
-        - /special/skills/dir
-```
-
-### Bundle Configuration
-
-Bundles work identically to profiles - same configuration format:
-
-```yaml
-bundle:
-  name: my-bundle
-  version: 1.0.0
-
-tools:
-  - module: tool-skills
-    source: git+https://github.com/robotdad/amplifier-module-tool-skills@main
-    config:
-      skills_dirs:
-        - ~/.amplifier/skills
-        - ./project-skills
-```
-
-Run with: `amplifier run -B my-bundle "your prompt"`
-
-**Note:** Bundles use the same configuration priority as profiles (config → settings.yaml → defaults).
-
 ### Configuration Priority
 
-1. **Profile/Bundle config** (`skills_dirs` in tool config) - highest priority
+1. **Bundle config** (`skills_dirs` in tool config) - highest priority
 2. **Settings.yaml** (`skills.dirs` in global/project settings) - recommended
 3. **Defaults** (`.amplifier/skills`, `~/.amplifier/skills`, `$AMPLIFIER_SKILLS_DIR`) - fallback
 
@@ -169,18 +189,17 @@ result = await tool.execute({"skill_name": "python-standards"})
 # Returns: {"content": "# python-standards\n\n...", "skill_directory": "/path/to/skill"}
 ```
 
-### In Profile
+### In a Bundle
 
 ```markdown
 ---
-profile:
+bundle:
   name: module-creator
   description: Creates new Amplifier modules
 
-tools:
-  - module: tool-filesystem
-  - module: tool-bash
-  - module: tool-skills
+includes:
+  - bundle: git+https://github.com/microsoft/amplifier-foundation@main
+  - bundle: skills:behaviors/skills
 ---
 
 You are an Amplifier module creator.
@@ -222,12 +241,11 @@ skills:
     - ~/.amplifier/skills
 EOF
 
-# 3. Add tool to your profile
-# In profile frontmatter:
-# tools:
-#   - module: tool-skills
+# 3. Add the skills bundle
+amplifier bundle add git+https://github.com/microsoft/amplifier-module-tool-skills@main
 
-# 4. Use in any session
+# 4. Use it
+amplifier bundle use skills
 amplifier run "List available skills"
 ```
 

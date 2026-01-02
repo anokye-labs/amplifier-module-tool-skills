@@ -1,0 +1,11 @@
+bundle:
+  name: skills-behavior
+  version: 1.0.0
+  description: Anthropic Skills support with progressive disclosure
+
+tools:
+  - module: tool-skills
+    source: git+https://github.com/microsoft/amplifier-module-tool-skills@main
+    config:
+      # Default: uses ~/.amplifier/skills and .amplifier/skills
+      # Users can override via bundle composition or settings.yaml
