@@ -24,6 +24,65 @@ Skills are domain knowledge packages following the [Anthropic Skills specificati
 - **Level 2 (Content)**: Full markdown body (~1-5k tokens) - loaded on demand
 - **Level 3 (References)**: Additional files (0 tokens until accessed via read_file)
 
+## Skills Visibility
+
+When this bundle is included, agents **automatically see** a list of available skills in their context before each request. This follows Anthropic's Skills specification recommendation for progressive disclosure.
+
+### How It Works
+
+**Progressive Disclosure:**
+- **Level 1 (Always visible)**: Skill metadata (name + description) - ~30-50 tokens per skill
+- **Level 2 (On demand)**: Full skill content - loaded via `load_skill(skill_name="...")`
+- **Level 3 (References)**: Companion files - accessed via `read_file(skill_directory + "/file")`
+
+**What agents see:**
+
+```
+<available_skills>
+Available skills (use load_skill tool):
+
+- **python-testing**: Best practices for Python testing with pytest
+- **git-workflow**: Git branching and commit message standards
+- **api-design**: RESTful API design patterns and conventions
+</available_skills>
+```
+
+Skills are injected before each LLM request using an integrated hook, ensuring agents always have current skill awareness without manual discovery.
+
+### Configuration
+
+**Default behavior** (visibility enabled):
+```yaml
+tools:
+  - module: tool-skills
+    # Uses default visibility settings
+```
+
+**Disable visibility** (manual discovery only):
+```yaml
+tools:
+  - module: tool-skills
+    config:
+      visibility:
+        enabled: false
+```
+
+**Limit visible skills** (for large collections):
+```yaml
+tools:
+  - module: tool-skills
+    config:
+      visibility:
+        max_skills_visible: 20
+```
+
+### Token Cost
+
+- ~30-50 tokens per skill (metadata only)
+- Typical: 10 skills = ~500 tokens per request
+- Large collections: Use `max_skills_visible` to limit
+- Trade-off: Saves 1-2 discovery tool calls (~200-500 tokens)
+
 ## Available Tool
 
 ### load_skill

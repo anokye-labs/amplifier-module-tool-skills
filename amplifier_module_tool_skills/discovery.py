@@ -20,7 +20,14 @@ VALID_NAME_PATTERN = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 
 @dataclass
 class SkillMetadata:
-    """Metadata from a SKILL.md file's YAML frontmatter."""
+    """Metadata from a SKILL.md file's YAML frontmatter.
+    
+    Follows Anthropic Skills Specification:
+    https://agentskills.io/specification
+    
+    Required fields: name, description
+    Optional fields: version, license, compatibility, allowed-tools, metadata
+    """
 
     name: str
     description: str
@@ -28,6 +35,7 @@ class SkillMetadata:
     source: str  # Which directory/source this came from
     version: str | None = None
     license: str | None = None
+    compatibility: str | None = None  # Environment requirements (max 500 chars per spec)
     allowed_tools: list[str] | None = None
     metadata: dict[str, Any] | None = None
 
@@ -150,7 +158,22 @@ def discover_skills(skills_dir: Path) -> dict[str, SkillMetadata]:
                 )
 
             # Parse allowed-tools (note: YAML uses hyphen, Python uses underscore)
-            allowed_tools = frontmatter.get("allowed-tools")
+            # Can be list or space-delimited string per Anthropic Skills Spec
+            allowed_tools_raw = frontmatter.get("allowed-tools")
+            allowed_tools = None
+            if allowed_tools_raw:
+                if isinstance(allowed_tools_raw, list):
+                    allowed_tools = [str(tool) for tool in allowed_tools_raw]
+                elif isinstance(allowed_tools_raw, str):
+                    # Support space-delimited string format per spec
+                    allowed_tools = [tool.strip() for tool in allowed_tools_raw.split()]
+                else:
+                    logger.warning(
+                        f"Invalid allowed-tools format in {skill_file}: {type(allowed_tools_raw)}"
+                    )
+
+            # Parse compatibility field (optional, max 500 chars per spec)
+            compatibility = frontmatter.get("compatibility")
 
             # Create metadata
             metadata = SkillMetadata(
@@ -160,6 +183,7 @@ def discover_skills(skills_dir: Path) -> dict[str, SkillMetadata]:
                 source=str(skills_dir),
                 version=frontmatter.get("version"),
                 license=frontmatter.get("license"),
+                compatibility=compatibility,
                 allowed_tools=allowed_tools,
                 metadata=frontmatter.get("metadata"),
             )

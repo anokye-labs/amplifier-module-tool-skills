@@ -45,6 +45,23 @@ async def mount(coordinator: "ModuleCoordinator", config: dict[str, Any] | None 
     await coordinator.mount("tools", tool, name=tool.name)
     logger.info(f"Mounted SkillsTool with {len(tool.skills)} skills from {len(tool.skills_dirs)} sources")
 
+    # Mount skills visibility hook if enabled
+    visibility_config = config.get("visibility", {})
+    if visibility_config.get("enabled", True):  # Default: enabled
+        from amplifier_module_tool_skills.hooks import SkillsVisibilityHook
+        
+        hook = SkillsVisibilityHook(tool.skills, visibility_config)
+        
+        # Register hook on provider:request event
+        coordinator.hooks.register(
+            event="provider:request",
+            handler=hook.on_provider_request,
+            priority=hook.priority,
+            name="skills-visibility",
+        )
+        
+        logger.info(f"Mounted skills visibility hook with {len(tool.skills)} skills")
+
     # Emit discovery event
     await coordinator.hooks.emit(
         "skills:discovered",
@@ -267,6 +284,8 @@ Skill Discovery:
             "description": metadata.description,
             "version": metadata.version,
             "license": metadata.license,
+            "compatibility": metadata.compatibility,
+            "allowed_tools": metadata.allowed_tools,
             "path": str(metadata.path),
         }
 
