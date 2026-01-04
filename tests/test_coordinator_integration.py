@@ -12,6 +12,7 @@ class MockCoordinator:
         self.capabilities = {}
         self.mounted_tools = {}
         self.hooks = MockHooks()
+        self.config = {}  # Add config attribute for coordinator integration
         
     def register_capability(self, name: str, value):
         """Register a capability."""
@@ -36,12 +37,24 @@ class MockHooks:
     def __init__(self):
         self.listeners = {}
         self.emitted_events = []
+        self.registered_hooks = []
         
     def on(self, event_name: str, listener):
         """Register event listener."""
         if event_name not in self.listeners:
             self.listeners[event_name] = []
         self.listeners[event_name].append(listener)
+        
+    def register(self, event: str, handler, priority: int = 10, name: str = None):
+        """Register a hook handler."""
+        self.registered_hooks.append({
+            "event": event,
+            "handler": handler,
+            "priority": priority,
+            "name": name,
+        })
+        # Also add to listeners for compatibility
+        self.on(event, handler)
         
     async def emit(self, event_name: str, data):
         """Emit an event."""

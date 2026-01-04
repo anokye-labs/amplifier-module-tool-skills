@@ -1,0 +1,26 @@
+bundle:
+  name: skills-behavior
+  version: 1.0.0
+  description: Anthropic Skills support with progressive disclosure and automatic visibility
+
+tools:
+  - module: tool-skills
+    # source: git+https://github.com/microsoft/amplifier-module-tool-skills@main
+    # For local development, use: amplifier source add tool-skills <path>
+    config:
+      # Skills directories (optional - uses defaults if not specified)
+      # Default directories:
+      #   - .amplifier/skills/ (workspace)
+      #   - ~/.amplifier/skills/ (user home)
+      #   - AMPLIFIER_SKILLS_DIR environment variable
+      # skills_dirs:
+      #   - /custom/path/to/skills
+      #   - /another/path
+      
+      # Skills visibility (automatic context injection)
+      visibility:
+        enabled: true              # Show available skills to agent (default: true)
+        inject_role: "user"        # Role for injected message (default: "user")
+        max_skills_visible: 50     # Limit for large skill sets (default: 50)
+        ephemeral: true            # Don't persist in history (default: true)
+        priority: 20               # Hook execution priority (default: 20)
