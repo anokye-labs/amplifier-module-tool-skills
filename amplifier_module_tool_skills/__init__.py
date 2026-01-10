@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from collections.abc import Callable, Coroutine
 from typing import TYPE_CHECKING, Any
 
 from amplifier_core import ToolResult
@@ -106,7 +107,7 @@ async def _resolve_skill_sources(
 
 async def mount(
     coordinator: "ModuleCoordinator", config: dict[str, Any] | None = None
-) -> None:
+) -> Callable[[], Coroutine[Any, Any, None]] | None:
     """Mount the skills tool.
 
     Args:
@@ -118,6 +119,9 @@ async def mount(
             Example: ["~/.amplifier/skills", "git+https://github.com/org/skills@main"]
         skills_dirs: Legacy alias for skills (local paths only)
         skills_dir: Legacy single directory option
+
+    Returns:
+        Async cleanup function that emits skill:unloaded events
     """
     config = config or {}
     logger.info(f"Mounting SkillsTool with config: {config}")
@@ -127,7 +131,8 @@ async def mount(
     obs_events.extend(
         [
             "skills:discovered",  # When skills are found during mount
-            "skill:loaded",  # When skill loaded successfully
+            "skill:loaded",  # When skill loaded successfully (includes hooks config)
+            "skill:unloaded",  # When skill is unloaded (for hook cleanup)
         ]
     )
     coordinator.register_capability("observability.events", obs_events)
@@ -168,7 +173,24 @@ async def mount(
         },
     )
 
-    return
+    # Return cleanup function that emits skill:unloaded for each loaded skill
+    async def cleanup() -> None:
+        """Cleanup function that emits skill:unloaded events."""
+        for skill_name in tool.loaded_skills:
+            metadata = tool.skills.get(skill_name)
+            if metadata:
+                await coordinator.hooks.emit(
+                    "skill:unloaded",
+                    {
+                        "skill_name": skill_name,
+                        "source": metadata.source,
+                        "hooks": metadata.hooks,
+                    },
+                )
+                logger.debug(f"Emitted skill:unloaded for {skill_name}")
+        tool.loaded_skills.clear()
+
+    return cleanup
 
 
 class SkillsTool:
@@ -230,6 +252,7 @@ Skill Discovery:
         """
         self.config = config
         self.coordinator = coordinator
+        self.loaded_skills: set[str] = set()  # Track which skills have been loaded
 
         # Use pre-resolved dirs if provided, otherwise discover
         if resolved_dirs is not None:
@@ -398,8 +421,9 @@ Skill Discovery:
             )
 
         logger.info(f"Loaded skill: {skill_name}")
+        self.loaded_skills.add(skill_name)  # Track for cleanup
 
-        # Emit skill loaded event
+        # Emit skill loaded event (hooks-shell module listens for this to activate skill-scoped hooks)
         if self.coordinator:
             await self.coordinator.hooks.emit(
                 "skill:loaded",
@@ -408,6 +432,8 @@ Skill Discovery:
                     "source": metadata.source,
                     "content_length": len(body),
                     "version": metadata.version,
+                    "skill_directory": str(metadata.path.parent),
+                    "hooks": metadata.hooks,  # Claude Code-compatible hooks config (or None)
                 },
             )
 
