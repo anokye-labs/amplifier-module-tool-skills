@@ -21,12 +21,15 @@ VALID_NAME_PATTERN = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 @dataclass
 class SkillMetadata:
     """Metadata from a SKILL.md file's YAML frontmatter.
-    
+
     Follows Anthropic Skills Specification:
     https://agentskills.io/specification
-    
+
     Required fields: name, description
-    Optional fields: version, license, compatibility, allowed-tools, metadata
+    Optional fields: version, license, compatibility, allowed-tools, metadata, hooks
+
+    Hooks field follows Claude Code hooks format for skill-scoped hooks that
+    activate when the skill is loaded and deactivate when unloaded.
     """
 
     name: str
@@ -35,9 +38,12 @@ class SkillMetadata:
     source: str  # Which directory/source this came from
     version: str | None = None
     license: str | None = None
-    compatibility: str | None = None  # Environment requirements (max 500 chars per spec)
+    compatibility: str | None = (
+        None  # Environment requirements (max 500 chars per spec)
+    )
     allowed_tools: list[str] | None = None
     metadata: dict[str, Any] | None = None
+    hooks: dict[str, Any] | None = None  # Claude Code-compatible hooks config
 
 
 def parse_skill_frontmatter(skill_path: Path) -> dict[str, Any] | None:
@@ -136,7 +142,9 @@ def discover_skills(skills_dir: Path) -> dict[str, SkillMetadata]:
             description = frontmatter.get("description")
 
             if not name or not description:
-                logger.warning(f"Skipping {skill_file} - missing required fields (name, description)")
+                logger.warning(
+                    f"Skipping {skill_file} - missing required fields (name, description)"
+                )
                 continue
 
             # Validate name format (per Anthropic Skills Spec)
@@ -175,6 +183,15 @@ def discover_skills(skills_dir: Path) -> dict[str, SkillMetadata]:
             # Parse compatibility field (optional, max 500 chars per spec)
             compatibility = frontmatter.get("compatibility")
 
+            # Parse hooks field (Claude Code-compatible format)
+            # Skills can embed hooks that activate when the skill is loaded
+            hooks_config = frontmatter.get("hooks")
+            if hooks_config and not isinstance(hooks_config, dict):
+                logger.warning(
+                    f"Invalid hooks format in {skill_file}: expected dict, got {type(hooks_config)}"
+                )
+                hooks_config = None
+
             # Create metadata
             metadata = SkillMetadata(
                 name=name,
@@ -186,6 +203,7 @@ def discover_skills(skills_dir: Path) -> dict[str, SkillMetadata]:
                 compatibility=compatibility,
                 allowed_tools=allowed_tools,
                 metadata=frontmatter.get("metadata"),
+                hooks=hooks_config,
             )
 
             skills[name] = metadata
@@ -199,7 +217,9 @@ def discover_skills(skills_dir: Path) -> dict[str, SkillMetadata]:
     return skills
 
 
-def discover_skills_multi_source(skills_dirs: list[Path] | list[str]) -> dict[str, SkillMetadata]:
+def discover_skills_multi_source(
+    skills_dirs: list[Path] | list[str],
+) -> dict[str, SkillMetadata]:
     """
     Discover skills from multiple directories with priority.
 
@@ -236,7 +256,9 @@ def discover_skills_multi_source(skills_dirs: list[Path] | list[str]) -> dict[st
                     f"Skipping duplicate skill '{name}' from {dir_path} (already have from {all_skills[name].source})"
                 )
 
-    logger.info(f"Discovered {len(all_skills)} skills from {len(sources_checked)} sources")
+    logger.info(
+        f"Discovered {len(all_skills)} skills from {len(sources_checked)} sources"
+    )
     return all_skills
 
 
