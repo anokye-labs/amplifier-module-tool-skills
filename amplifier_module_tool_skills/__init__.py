@@ -331,6 +331,10 @@ Skill Discovery:
                     "type": "string",
                     "description": "Get metadata for a specific skill without loading full content",
                 },
+                "source": {
+                    "type": "string",
+                    "description": "Register a new skill source. Accepts @namespace:path, git+https:// URLs, or local paths.",
+                },
             },
         }
 
