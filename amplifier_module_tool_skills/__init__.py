@@ -13,10 +13,12 @@ from typing import TYPE_CHECKING, Any
 
 from amplifier_core import ToolResult
 
+from amplifier_module_tool_skills.discovery import discover_skills
 from amplifier_module_tool_skills.discovery import discover_skills_multi_source
 from amplifier_module_tool_skills.discovery import extract_skill_body
 from amplifier_module_tool_skills.discovery import get_default_skills_dirs
 from amplifier_module_tool_skills.sources import is_remote_source
+from amplifier_module_tool_skills.sources import resolve_skill_source
 from amplifier_module_tool_skills.sources import resolve_skill_sources
 
 if TYPE_CHECKING:
@@ -331,8 +333,40 @@ Skill Discovery:
                     "type": "string",
                     "description": "Get metadata for a specific skill without loading full content",
                 },
+                "source": {
+                    "type": "string",
+                    "description": "Register a new skill source. Accepts @namespace:path, git+https:// URLs, or local paths.",
+                },
             },
         }
+
+    async def _resolve_source(self, source: str) -> Path | None:
+        """Resolve a source string to a local directory path.
+
+        Handles @namespace:path (via mention_resolver), git+https:// URLs
+        (via sources.py), and local filesystem paths.
+
+        Args:
+            source: Source string to resolve.
+
+        Returns:
+            Resolved local Path, or None if resolution fails.
+        """
+        # @namespace:path — use mention resolver
+        if source.startswith("@"):
+            if self.coordinator:
+                resolver = self.coordinator.get_capability("mention_resolver")
+                if resolver:
+                    return resolver.resolve(source)
+            return None
+
+        # git+https:// or https:// — use existing sources.py
+        if is_remote_source(source):
+            return await resolve_skill_source(source)
+
+        # Local path
+        path = Path(source).expanduser().resolve()
+        return path if path.exists() else None
 
     async def execute(self, input: dict[str, Any]) -> ToolResult:
         """
@@ -344,6 +378,49 @@ Skill Discovery:
         Returns:
             Tool result with skill content or list
         """
+        # Source registration — resolve, discover, merge
+        source_str = input.get("source")
+        source_summary = None
+        if source_str:
+            resolved_path = await self._resolve_source(source_str)
+            if resolved_path is None:
+                return ToolResult(
+                    success=False,
+                    output=f"Could not resolve source: {source_str}",
+                )
+
+            new_skills = discover_skills(resolved_path)
+
+            # Merge with first-match-wins: existing skills take priority
+            added = []
+            for name, metadata in new_skills.items():
+                if name not in self.skills:
+                    self.skills[name] = metadata
+                    added.append(name)
+
+            source_summary = (
+                f"Source '{source_str}' resolved to {resolved_path}. "
+                f"Found {len(new_skills)} skill(s), {len(added)} new: {', '.join(sorted(added)) if added else 'none (all duplicates)'}."
+            )
+
+            # Emit discovery event
+            if self.coordinator:
+                await self.coordinator.hooks.emit(
+                    "skills:discovered",
+                    {
+                        "skill_count": len(new_skills),
+                        "skill_names": list(new_skills.keys()),
+                        "sources": [str(resolved_path)],
+                    },
+                )
+
+            # If no other params, return the summary
+            has_other_params = any(
+                input.get(k) for k in ("skill_name", "list", "search", "info")
+            )
+            if not has_other_params:
+                return ToolResult(success=True, output=source_summary)
+
         # List mode
         if input.get("list"):
             return self._list_skills()
