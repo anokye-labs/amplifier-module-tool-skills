@@ -338,6 +338,22 @@ Skill Discovery:
             },
         }
 
+    async def _resolve_source(self, source: str) -> Path | None:
+        """Resolve a source string to a local directory path.
+
+        Handles @namespace:path (via mention_resolver), git+https:// URLs
+        (via sources.py), and local filesystem paths.
+
+        Args:
+            source: Source string to resolve.
+
+        Returns:
+            Resolved local Path, or None if resolution fails.
+        """
+        # Local path
+        path = Path(source).expanduser().resolve()
+        return path if path.exists() else None
+
     async def execute(self, input: dict[str, Any]) -> ToolResult:
         """
         Execute skill tool operation.
