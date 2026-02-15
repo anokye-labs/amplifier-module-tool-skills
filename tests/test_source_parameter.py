@@ -76,12 +76,14 @@ class MockHooks:
         self.listeners[event_name].append(listener)
 
     def register(self, event: str, handler, priority: int = 10, name: str = None):
-        self.registered_hooks.append({
-            "event": event,
-            "handler": handler,
-            "priority": priority,
-            "name": name,
-        })
+        self.registered_hooks.append(
+            {
+                "event": event,
+                "handler": handler,
+                "priority": priority,
+                "name": name,
+            }
+        )
         self.on(event, handler)
 
     async def emit(self, event_name: str, data):
@@ -190,3 +192,254 @@ description: A cool new skill
     assert result.success is True
     assert "cool-skill" in tool.skills
     assert "cool-skill" in str(result.output)
+
+
+# --- Task 6: Deduplication — existing skills take priority ---
+
+
+@pytest.mark.asyncio
+async def test_execute_source_existing_skills_take_priority(tmp_path):
+    """Test that existing skills are NOT overwritten by source skills."""
+    # Create mount-time skills directory with python-standards
+    mount_dir = tmp_path / "mount-skills" / "python-standards"
+    mount_dir.mkdir(parents=True)
+    (mount_dir / "SKILL.md").write_text("""---
+name: python-standards
+description: Original mount-time skill
+---
+# Original Content""")
+
+    # Create source directory with a DIFFERENT python-standards
+    source_dir = tmp_path / "source-skills" / "python-standards"
+    source_dir.mkdir(parents=True)
+    (source_dir / "SKILL.md").write_text("""---
+name: python-standards
+description: Overriding source skill
+---
+# Overriding Content""")
+
+    coordinator = MockCoordinator()
+    tool = SkillsTool(
+        config={},
+        coordinator=coordinator,
+        resolved_dirs=[tmp_path / "mount-skills"],
+    )
+
+    # Verify original is loaded
+    assert tool.skills["python-standards"].description == "Original mount-time skill"
+
+    result = await tool.execute({"source": str(tmp_path / "source-skills")})
+
+    assert result.success is True
+    # Original skill must still be there, NOT overwritten
+    assert tool.skills["python-standards"].description == "Original mount-time skill"
+
+
+# --- Task 7: Error handling ---
+
+
+@pytest.mark.asyncio
+async def test_execute_source_nonexistent_path():
+    """Test execute with nonexistent source path returns clear error."""
+    coordinator = MockCoordinator()
+    tool = SkillsTool(config={}, coordinator=coordinator)
+
+    result = await tool.execute({"source": "/nonexistent/path/nowhere"})
+
+    assert result.success is False
+    assert "Could not resolve source" in str(result.output)
+    assert "/nonexistent/path/nowhere" in str(result.output)
+
+
+@pytest.mark.asyncio
+async def test_execute_source_empty_directory(tmp_path):
+    """Test execute with source dir containing no skills returns success with 0 count."""
+    empty_dir = tmp_path / "empty"
+    empty_dir.mkdir()
+
+    coordinator = MockCoordinator()
+    tool = SkillsTool(config={}, coordinator=coordinator)
+
+    result = await tool.execute({"source": str(empty_dir)})
+
+    assert result.success is True
+    assert "0 skill(s)" in str(result.output)
+
+
+@pytest.mark.asyncio
+async def test_execute_source_mention_no_resolver():
+    """Test execute with @mention when no mention_resolver is available."""
+    coordinator = MockCoordinator()
+    # No mention_resolver capability registered
+    tool = SkillsTool(config={}, coordinator=coordinator)
+
+    result = await tool.execute({"source": "@nonexistent:namespace"})
+
+    assert result.success is False
+    assert "Could not resolve source" in str(result.output)
+
+
+# --- Task 8: Parameter combination — source + skill_name ---
+
+
+@pytest.mark.asyncio
+async def test_execute_source_plus_skill_name(tmp_path):
+    """Test source + skill_name: registers source then loads the skill."""
+    # Create source with a skill
+    skill_dir = tmp_path / "ext-skills" / "fancy-skill"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("""---
+name: fancy-skill
+description: A fancy skill
+---
+# Fancy Skill
+
+This is the full content of the fancy skill.""")
+
+    coordinator = MockCoordinator()
+    tool = SkillsTool(config={}, coordinator=coordinator)
+
+    result = await tool.execute(
+        {
+            "source": str(tmp_path / "ext-skills"),
+            "skill_name": "fancy-skill",
+        }
+    )
+
+    assert result.success is True
+    # Should return the skill CONTENT, not just the discovery summary
+    output = result.output
+    assert "fancy-skill" in str(output)
+    assert "Fancy Skill" in str(output)
+    assert "full content" in str(output)
+
+
+# --- Task 9: Parameter combination — source + list ---
+
+
+@pytest.mark.asyncio
+async def test_execute_source_plus_list(tmp_path):
+    """Test source + list=True: registers source then lists all skills."""
+    # Create mount-time skills
+    mount_dir = tmp_path / "mount-skills" / "existing-skill"
+    mount_dir.mkdir(parents=True)
+    (mount_dir / "SKILL.md").write_text("""---
+name: existing-skill
+description: Already mounted skill
+---
+# Existing""")
+
+    # Create source skills
+    source_dir = tmp_path / "source-skills" / "new-skill"
+    source_dir.mkdir(parents=True)
+    (source_dir / "SKILL.md").write_text("""---
+name: new-skill
+description: Newly added skill
+---
+# New""")
+
+    coordinator = MockCoordinator()
+    tool = SkillsTool(
+        config={},
+        coordinator=coordinator,
+        resolved_dirs=[tmp_path / "mount-skills"],
+    )
+
+    result = await tool.execute(
+        {
+            "source": str(tmp_path / "source-skills"),
+            "list": True,
+        }
+    )
+
+    assert result.success is True
+    output_str = str(result.output)
+    # Should list BOTH existing and new skills
+    assert "existing-skill" in output_str
+    assert "new-skill" in output_str
+
+
+# --- Task 10: Visibility hook auto-update verification ---
+
+
+@pytest.mark.asyncio
+async def test_visibility_hook_sees_source_skills(tmp_path):
+    """Test that visibility hook auto-updates when source adds skills.
+
+    The SkillsVisibilityHook holds a DIRECT reference to tool.skills (not a copy).
+    Mutating tool.skills via execute(source=...) should automatically propagate.
+    """
+    from amplifier_module_tool_skills.hooks import SkillsVisibilityHook
+
+    # Create mount-time skill
+    mount_dir = tmp_path / "mount-skills" / "original-skill"
+    mount_dir.mkdir(parents=True)
+    (mount_dir / "SKILL.md").write_text("""---
+name: original-skill
+description: Original skill
+---
+# Original""")
+
+    coordinator = MockCoordinator()
+    tool = SkillsTool(
+        config={},
+        coordinator=coordinator,
+        resolved_dirs=[tmp_path / "mount-skills"],
+    )
+
+    # Create visibility hook with reference to tool.skills (same as mount() does)
+    hook = SkillsVisibilityHook(tool.skills, {"enabled": True})
+
+    # Verify hook only sees original skill
+    result = await hook.on_provider_request("provider:request", {})
+    assert "original-skill" in result.context_injection
+    assert "added-skill" not in result.context_injection
+
+    # Now add a source with a new skill
+    source_dir = tmp_path / "source-skills" / "added-skill"
+    source_dir.mkdir(parents=True)
+    (source_dir / "SKILL.md").write_text("""---
+name: added-skill
+description: Dynamically added skill
+---
+# Added""")
+
+    await tool.execute({"source": str(tmp_path / "source-skills")})
+
+    # Hook should NOW see the new skill (same dict reference)
+    result = await hook.on_provider_request("provider:request", {})
+    assert "original-skill" in result.context_injection
+    assert "added-skill" in result.context_injection
+
+
+# --- Task 11: Verify skills:discovered event emission ---
+
+
+@pytest.mark.asyncio
+async def test_execute_source_emits_discovered_event(tmp_path):
+    """Test that execute with source emits skills:discovered event."""
+    skill_dir = tmp_path / "event-skills" / "event-skill"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("""---
+name: event-skill
+description: Skill for event testing
+---
+# Event Test""")
+
+    coordinator = MockCoordinator()
+    tool = SkillsTool(config={}, coordinator=coordinator)
+
+    await tool.execute({"source": str(tmp_path / "event-skills")})
+
+    # Find the skills:discovered event
+    discovered_events = [
+        (name, data)
+        for name, data in coordinator.hooks.emitted_events
+        if name == "skills:discovered"
+    ]
+    assert len(discovered_events) == 1
+
+    event_name, data = discovered_events[0]
+    assert data["skill_count"] == 1
+    assert "event-skill" in data["skill_names"]
+    assert len(data["sources"]) == 1
