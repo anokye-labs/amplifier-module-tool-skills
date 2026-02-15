@@ -127,3 +127,41 @@ async def test_resolve_source_mention_no_resolver():
     result = await tool._resolve_source("@nonexistent:bundle")
 
     assert result is None
+
+
+@pytest.mark.asyncio
+async def test_resolve_source_remote_url(tmp_path, monkeypatch):
+    """Test _resolve_source resolves git+https:// via resolve_skill_source."""
+    expected_path = tmp_path / "cached-skills"
+    expected_path.mkdir()
+
+    async def mock_resolve(source, cache_dir=None):
+        return expected_path
+
+    monkeypatch.setattr(
+        "amplifier_module_tool_skills.resolve_skill_source",
+        mock_resolve,
+    )
+
+    tool = SkillsTool(config={})
+    result = await tool._resolve_source("git+https://github.com/example/skills@main")
+
+    assert result == expected_path
+
+
+@pytest.mark.asyncio
+async def test_resolve_source_remote_url_fails(monkeypatch):
+    """Test _resolve_source returns None when remote resolution fails."""
+
+    async def mock_resolve(source, cache_dir=None):
+        return None
+
+    monkeypatch.setattr(
+        "amplifier_module_tool_skills.resolve_skill_source",
+        mock_resolve,
+    )
+
+    tool = SkillsTool(config={})
+    result = await tool._resolve_source("git+https://github.com/nonexistent/repo@main")
+
+    assert result is None

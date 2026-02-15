@@ -17,6 +17,7 @@ from amplifier_module_tool_skills.discovery import discover_skills_multi_source
 from amplifier_module_tool_skills.discovery import extract_skill_body
 from amplifier_module_tool_skills.discovery import get_default_skills_dirs
 from amplifier_module_tool_skills.sources import is_remote_source
+from amplifier_module_tool_skills.sources import resolve_skill_source
 from amplifier_module_tool_skills.sources import resolve_skill_sources
 
 if TYPE_CHECKING:
@@ -357,6 +358,10 @@ Skill Discovery:
                 if resolver:
                     return resolver.resolve(source)
             return None
+
+        # git+https:// or https:// — use existing sources.py
+        if is_remote_source(source):
+            return await resolve_skill_source(source)
 
         # Local path
         path = Path(source).expanduser().resolve()
