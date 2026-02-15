@@ -350,6 +350,14 @@ Skill Discovery:
         Returns:
             Resolved local Path, or None if resolution fails.
         """
+        # @namespace:path — use mention resolver
+        if source.startswith("@"):
+            if self.coordinator:
+                resolver = self.coordinator.get_capability("mention_resolver")
+                if resolver:
+                    return resolver.resolve(source)
+            return None
+
         # Local path
         path = Path(source).expanduser().resolve()
         return path if path.exists() else None
