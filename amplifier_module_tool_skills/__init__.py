@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 from amplifier_core import ToolResult
 
+from amplifier_module_tool_skills.discovery import discover_skills
 from amplifier_module_tool_skills.discovery import discover_skills_multi_source
 from amplifier_module_tool_skills.discovery import extract_skill_body
 from amplifier_module_tool_skills.discovery import get_default_skills_dirs
@@ -377,6 +378,49 @@ Skill Discovery:
         Returns:
             Tool result with skill content or list
         """
+        # Source registration — resolve, discover, merge
+        source_str = input.get("source")
+        source_summary = None
+        if source_str:
+            resolved_path = await self._resolve_source(source_str)
+            if resolved_path is None:
+                return ToolResult(
+                    success=False,
+                    output=f"Could not resolve source: {source_str}",
+                )
+
+            new_skills = discover_skills(resolved_path)
+
+            # Merge with first-match-wins: existing skills take priority
+            added = []
+            for name, metadata in new_skills.items():
+                if name not in self.skills:
+                    self.skills[name] = metadata
+                    added.append(name)
+
+            source_summary = (
+                f"Source '{source_str}' resolved to {resolved_path}. "
+                f"Found {len(new_skills)} skill(s), {len(added)} new: {', '.join(sorted(added)) if added else 'none (all duplicates)'}."
+            )
+
+            # Emit discovery event
+            if self.coordinator:
+                await self.coordinator.hooks.emit(
+                    "skills:discovered",
+                    {
+                        "skill_count": len(new_skills),
+                        "skill_names": list(new_skills.keys()),
+                        "sources": [str(resolved_path)],
+                    },
+                )
+
+            # If no other params, return the summary
+            has_other_params = any(
+                input.get(k) for k in ("skill_name", "list", "search", "info")
+            )
+            if not has_other_params:
+                return ToolResult(success=True, output=source_summary)
+
         # List mode
         if input.get("list"):
             return self._list_skills()

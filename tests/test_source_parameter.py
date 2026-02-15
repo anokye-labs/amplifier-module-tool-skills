@@ -165,3 +165,28 @@ async def test_resolve_source_remote_url_fails(monkeypatch):
     result = await tool._resolve_source("git+https://github.com/nonexistent/repo@main")
 
     assert result is None
+
+
+@pytest.mark.asyncio
+async def test_execute_source_discovers_and_merges_skills(tmp_path):
+    """Test execute with source param discovers skills and merges them."""
+    # Create a source directory with skills
+    skill_dir = tmp_path / "new-source" / "cool-skill"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("""---
+name: cool-skill
+description: A cool new skill
+---
+# Cool Skill Content""")
+
+    coordinator = MockCoordinator()
+    tool = SkillsTool(config={}, coordinator=coordinator)
+
+    # Verify skill doesn't exist yet
+    assert "cool-skill" not in tool.skills
+
+    result = await tool.execute({"source": str(tmp_path / "new-source")})
+
+    assert result.success is True
+    assert "cool-skill" in tool.skills
+    assert "cool-skill" in str(result.output)
