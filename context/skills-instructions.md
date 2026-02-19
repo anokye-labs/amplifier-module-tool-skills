@@ -72,3 +72,29 @@ tools:
         enabled: true              # Show skills automatically (default: true)
         max_skills_visible: 50     # Limit for large collections (default: 50)
 ```
+
+## Configuring Skills in Bundles
+
+If your bundle ships its own skills or depends on community skills, configure them through the `tools:` section as module config for `tool-skills`:
+
+```yaml
+tools:
+  - module: tool-skills
+    source: git+https://github.com/microsoft/amplifier-module-tool-skills@main
+    config:
+      skills:
+        - "git+https://github.com/my-org/my-skills-repo@main#subdirectory=skills"
+        - "@mybundle:skills"
+```
+
+The `config.skills` list accepts three source types:
+
+| Source type | Example | When to use |
+|-------------|---------|-------------|
+| Git URL | `git+https://github.com/org/repo@main#subdirectory=skills` | Remote community or shared skill repos |
+| Bundle reference | `@mybundle:skills` | Skills shipped inside your own bundle |
+| Local path | `/absolute/path/to/skills` | Development and testing |
+
+Git URLs support an optional `#subdirectory=` fragment to point at a subfolder within the repo.
+
+> **Warning:** Do NOT use a top-level `skills:` key in your bundle frontmatter. The foundation layer does not process it — skill sources placed there will be **silently ignored**. Always use the `tools:` config pattern shown above.
