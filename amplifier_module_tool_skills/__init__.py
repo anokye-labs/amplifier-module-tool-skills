@@ -17,6 +17,7 @@ from amplifier_module_tool_skills.discovery import discover_skills
 from amplifier_module_tool_skills.discovery import discover_skills_multi_source
 from amplifier_module_tool_skills.discovery import extract_skill_body
 from amplifier_module_tool_skills.discovery import get_default_skills_dirs
+from amplifier_module_tool_skills.model_resolver import resolve_skill_model
 from amplifier_module_tool_skills.preprocessing import preprocess
 from amplifier_module_tool_skills.sources import is_remote_source
 from amplifier_module_tool_skills.sources import resolve_skill_source
@@ -566,6 +567,16 @@ Skill Discovery:
                 },
             )
 
+        # Fork detection: check if this skill should be executed via delegate
+        if metadata.context == "fork" and self.coordinator:
+            spawn_fn = self.coordinator.get_capability("session.spawn")
+            if spawn_fn is not None:
+                return await self._execute_fork(skill_name, metadata, body)
+            else:
+                logger.warning(
+                    f"Fork skill '{skill_name}' loaded inline (session.spawn not available)"
+                )
+
         return ToolResult(
             success=True,
             output={
@@ -577,3 +588,89 @@ Skill Discovery:
                 "loaded_from": metadata.source,  # Source directory for context
             },
         )
+
+    async def _execute_fork(
+        self,
+        skill_name: str,
+        metadata: Any,
+        body: str,
+    ) -> ToolResult:
+        """Execute a fork skill by delegating to a sub-session via spawn.
+
+        Args:
+            skill_name: Name of the skill being executed.
+            metadata: Skill metadata containing model/agent configuration.
+            body: Raw (unpreprocessed) skill body content.
+
+        Returns:
+            ToolResult containing the delegate response, or an error ToolResult
+            if execution fails.
+        """
+        try:
+            # _execute_fork() is only called when coordinator is confirmed non-None
+            assert self.coordinator is not None
+
+            # 1. Preprocess body with skill_dir and arguments
+            processed_body = await preprocess(
+                body, skill_dir=metadata.path.parent, arguments=None
+            )
+
+            # 2. Resolve model selection via resolve_skill_model() using metadata fields
+            model_resolution = resolve_skill_model(
+                provider_preferences=metadata.provider_preferences,
+                model_role=metadata.model_role,
+                model=metadata.model,
+                agent=metadata.agent,
+            )
+
+            provider_preferences = model_resolution.get("provider_preferences")
+            resolved_model_role = model_resolution.get("model_role")
+
+            # 3. Attempt routing matrix resolution if model_role resolved but no provider_preferences
+            if resolved_model_role is not None and provider_preferences is None:
+                routing_matrix = self.coordinator.get_capability("routing_matrix")
+                if routing_matrix is not None:
+                    resolved = routing_matrix.resolve(resolved_model_role)
+                    if resolved:
+                        provider_preferences = resolved
+
+            # 4. Get spawn function and related context from coordinator capabilities
+            spawn_fn = self.coordinator.get_capability("session.spawn")
+            parent_session = self.coordinator.get_capability("session.current")
+            agent_configs = self.coordinator.get_capability("agent_configs")
+            sub_session_id = None
+            session_metadata = {"skill_name": skill_name, "context": "fork"}
+
+            # 5. Call spawn_fn with assembled arguments
+            result = await spawn_fn(
+                agent_name=f"skill:{skill_name}",
+                instruction=processed_body,
+                parent_session=parent_session,
+                agent_configs=agent_configs,
+                sub_session_id=sub_session_id,
+                provider_preferences=provider_preferences,
+                session_metadata=session_metadata,
+            )
+
+            # 6. Return ToolResult with delegate output fields
+            return ToolResult(
+                success=True,
+                output={
+                    "response": result.get("response"),
+                    "session_id": result.get("session_id"),
+                    "skill_name": skill_name,
+                    "context": "fork",
+                    "turn_count": result.get("turn_count"),
+                    "status": result.get("status"),
+                },
+            )
+
+        except Exception as exc:  # noqa: BLE001
+            logger.error(f"Fork execution failed for skill '{skill_name}': {exc}")
+            return ToolResult(
+                success=False,
+                error={
+                    "message": f"Fork execution failed: {exc}",
+                    "skill_name": skill_name,
+                },
+            )

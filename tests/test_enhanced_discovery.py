@@ -402,6 +402,7 @@ The skill lives at ${SKILL_DIR} and has companion files there.
     result = await tool._load_skill("dir-skill")
 
     assert result.success is True
+    assert result.output is not None
     content = result.output["content"]
     # ${SKILL_DIR} should NOT appear in result
     assert "${SKILL_DIR}" not in content
@@ -432,6 +433,7 @@ Reference: ${SKILL_DIR}/examples/code.py
     result = await tool._load_skill("path-skill")
 
     assert result.success is True
+    assert result.output is not None
     content = result.output["content"]
     assert f"{expected_path}/examples/code.py" in content
 
@@ -457,6 +459,7 @@ Fork path: ${SKILL_DIR}/data
     result = await tool._load_skill("fork-skill")
 
     assert result.success is True
+    assert result.output is not None
     content = result.output["content"]
     # Fork skills should NOT have ${SKILL_DIR} substituted at this point
     assert "${SKILL_DIR}" in content
@@ -482,5 +485,290 @@ Just plain content here, no substitutions needed.
     result = await tool._load_skill("plain-skill")
 
     assert result.success is True
+    assert result.output is not None
     content = result.output["content"]
     assert "Just plain content here, no substitutions needed." in content
+
+
+# ---------------------------------------------------------------------------
+# Tests for context:fork execution via delegate (acceptance criteria task-8)
+# ---------------------------------------------------------------------------
+
+
+class MockCoordinatorWithSpawn(MockCoordinator):
+    """Extended mock coordinator that includes session.spawn capability."""
+
+    def __init__(self, spawn_fn=None):
+        super().__init__()
+        if spawn_fn is not None:
+            self.capabilities["session.spawn"] = spawn_fn
+
+
+@pytest.mark.asyncio
+async def test_fork_skill_calls_spawn_fn_with_preprocessed_instruction(
+    tmp_path: Path,
+):
+    """Fork skill with session.spawn calls spawn_fn with preprocessed instruction."""
+    from amplifier_module_tool_skills import SkillsTool
+
+    skill_dir = tmp_path / "fork-exec-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        """---
+name: fork-exec-skill
+description: Fork skill for testing spawn
+context: fork
+---
+The skill lives at ${SKILL_DIR} and is a fork skill.
+"""
+    )
+
+    spawn_calls = []
+
+    async def mock_spawn_fn(**kwargs):
+        spawn_calls.append(kwargs)
+        return {
+            "response": "Delegate response",
+            "session_id": "sess-123",
+            "turn_count": 3,
+            "status": "completed",
+        }
+
+    coordinator = MockCoordinatorWithSpawn(spawn_fn=mock_spawn_fn)
+    tool = SkillsTool({}, coordinator, resolved_dirs=[tmp_path])  # type: ignore[arg-type]
+    await tool._load_skill("fork-exec-skill")
+
+    # spawn_fn should have been called
+    assert len(spawn_calls) == 1
+    call = spawn_calls[0]
+
+    # instruction should be the preprocessed body — ${SKILL_DIR} must be substituted
+    instruction = call["instruction"]
+    assert "${SKILL_DIR}" not in instruction
+    assert str(skill_dir) in instruction
+
+
+@pytest.mark.asyncio
+async def test_fork_skill_spawn_fn_receives_correct_agent_name(tmp_path: Path):
+    """spawn_fn receives correct agent_name format 'skill:{name}'."""
+    from amplifier_module_tool_skills import SkillsTool
+
+    skill_dir = tmp_path / "named-fork-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        """---
+name: named-fork-skill
+description: Fork skill for agent_name test
+context: fork
+---
+Body content here.
+"""
+    )
+
+    spawn_calls = []
+
+    async def mock_spawn_fn(**kwargs):
+        spawn_calls.append(kwargs)
+        return {
+            "response": "Result",
+            "session_id": "sess-abc",
+            "turn_count": 1,
+            "status": "completed",
+        }
+
+    coordinator = MockCoordinatorWithSpawn(spawn_fn=mock_spawn_fn)
+    tool = SkillsTool({}, coordinator, resolved_dirs=[tmp_path])  # type: ignore[arg-type]
+    await tool._load_skill("named-fork-skill")
+
+    assert len(spawn_calls) == 1
+    assert spawn_calls[0]["agent_name"] == "skill:named-fork-skill"
+
+
+@pytest.mark.asyncio
+async def test_fork_skill_result_contains_delegate_output(tmp_path: Path):
+    """Result contains delegate output (response, session_id, status, context, turn_count)."""
+    from amplifier_module_tool_skills import SkillsTool
+
+    skill_dir = tmp_path / "delegate-result-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        """---
+name: delegate-result-skill
+description: Fork skill for result test
+context: fork
+---
+Body content.
+"""
+    )
+
+    async def mock_spawn_fn(**kwargs):
+        return {
+            "response": "The delegate response text",
+            "session_id": "delegate-session-456",
+            "turn_count": 5,
+            "status": "completed",
+        }
+
+    coordinator = MockCoordinatorWithSpawn(spawn_fn=mock_spawn_fn)
+    tool = SkillsTool({}, coordinator, resolved_dirs=[tmp_path])  # type: ignore[arg-type]
+    result = await tool._load_skill("delegate-result-skill")
+
+    assert result.success is True
+    assert result.output is not None
+    output = result.output
+    assert output["response"] == "The delegate response text"
+    assert output["session_id"] == "delegate-session-456"
+    assert output["turn_count"] == 5
+    assert output["status"] == "completed"
+    assert output["skill_name"] == "delegate-result-skill"
+    assert output["context"] == "fork"
+
+
+@pytest.mark.asyncio
+async def test_fork_skill_without_spawn_falls_back_to_inline(tmp_path: Path):
+    """Fork skill without session.spawn falls back to inline injection."""
+    from amplifier_module_tool_skills import SkillsTool
+
+    skill_dir = tmp_path / "inline-fallback-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        """---
+name: inline-fallback-skill
+description: Fork skill that falls back to inline
+context: fork
+---
+Body content without spawn.
+"""
+    )
+
+    # Coordinator without session.spawn capability
+    coordinator = MockCoordinatorWithSpawn(spawn_fn=None)
+    tool = SkillsTool({}, coordinator, resolved_dirs=[tmp_path])  # type: ignore[arg-type]
+    result = await tool._load_skill("inline-fallback-skill")
+
+    # Should fall back to inline — result has 'content' key
+    assert result.success is True
+    assert result.output is not None
+    assert "content" in result.output
+    assert "inline-fallback-skill" in result.output["content"]
+
+
+@pytest.mark.asyncio
+async def test_fork_skill_model_resolver_called_with_metadata_fields(tmp_path: Path):
+    """Model resolver is called with metadata's provider_preferences/model_role/model/agent."""
+    from amplifier_module_tool_skills import SkillsTool
+
+    skill_dir = tmp_path / "model-resolve-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        """---
+name: model-resolve-skill
+description: Fork skill with model fields
+context: fork
+model_role: reasoning
+---
+Body content.
+"""
+    )
+
+    spawn_calls = []
+
+    async def mock_spawn_fn(**kwargs):
+        spawn_calls.append(kwargs)
+        return {
+            "response": "Result",
+            "session_id": "sess-xyz",
+            "turn_count": 2,
+            "status": "completed",
+        }
+
+    # Set up routing matrix that resolves 'reasoning' to provider_preferences
+    class MockRoutingMatrix:
+        def resolve(self, model_role: str):
+            if model_role == "reasoning":
+                return [{"provider": "anthropic", "model": "claude-opus-*"}]
+            return None
+
+    coordinator = MockCoordinatorWithSpawn(spawn_fn=mock_spawn_fn)
+    coordinator.capabilities["routing_matrix"] = MockRoutingMatrix()
+    tool = SkillsTool({}, coordinator, resolved_dirs=[tmp_path])  # type: ignore[arg-type]
+    result = await tool._load_skill("model-resolve-skill")
+
+    assert result.success is True
+    assert len(spawn_calls) == 1
+    # routing matrix should have resolved model_role → provider_preferences
+    assert spawn_calls[0]["provider_preferences"] == [
+        {"provider": "anthropic", "model": "claude-opus-*"}
+    ]
+
+
+@pytest.mark.asyncio
+async def test_fork_skill_provider_preferences_passed_directly(tmp_path: Path):
+    """provider_preferences from metadata is passed directly to spawn_fn (no routing needed)."""
+    from amplifier_module_tool_skills import SkillsTool
+
+    skill_dir = tmp_path / "prefs-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        """---
+name: prefs-skill
+description: Fork skill with explicit provider_preferences
+context: fork
+provider_preferences:
+  - provider: openai
+    model: gpt-4o
+---
+Body content.
+"""
+    )
+
+    spawn_calls = []
+
+    async def mock_spawn_fn(**kwargs):
+        spawn_calls.append(kwargs)
+        return {
+            "response": "Result",
+            "session_id": "sess-prefs",
+            "turn_count": 1,
+            "status": "completed",
+        }
+
+    coordinator = MockCoordinatorWithSpawn(spawn_fn=mock_spawn_fn)
+    tool = SkillsTool({}, coordinator, resolved_dirs=[tmp_path])  # type: ignore[arg-type]
+    result = await tool._load_skill("prefs-skill")
+
+    assert result.success is True
+    assert len(spawn_calls) == 1
+    # provider_preferences should be passed directly from metadata
+    assert spawn_calls[0]["provider_preferences"] == [
+        {"provider": "openai", "model": "gpt-4o"}
+    ]
+
+
+@pytest.mark.asyncio
+async def test_fork_skill_exception_returns_error_toolresult(tmp_path: Path):
+    """Exceptions in spawn_fn are caught and returned as error ToolResult."""
+    from amplifier_module_tool_skills import SkillsTool
+
+    skill_dir = tmp_path / "exception-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        """---
+name: exception-skill
+description: Fork skill that raises an exception
+context: fork
+---
+Body content.
+"""
+    )
+
+    async def failing_spawn_fn(**kwargs):
+        raise RuntimeError("Spawn failed: connection refused")
+
+    coordinator = MockCoordinatorWithSpawn(spawn_fn=failing_spawn_fn)
+    tool = SkillsTool({}, coordinator, resolved_dirs=[tmp_path])  # type: ignore[arg-type]
+    result = await tool._load_skill("exception-skill")
+
+    assert result.success is False
+    assert result.error is not None
+    assert "Fork execution failed" in result.error["message"]
