@@ -153,13 +153,14 @@ async def mount(
 
     # Mount skills visibility hook if enabled
     visibility_config = config.get("visibility", {})
+    unregister_visibility = None
     if visibility_config.get("enabled", True):  # Default: enabled
         from amplifier_module_tool_skills.hooks import SkillsVisibilityHook
 
         hook = SkillsVisibilityHook(tool.skills, visibility_config)
 
-        # Register hook on provider:request event
-        coordinator.hooks.register(
+        # Register hook on provider:request event; capture unregister callable
+        unregister_visibility = coordinator.hooks.register(
             event="provider:request",
             handler=hook.on_provider_request,
             priority=hook.priority,
@@ -208,6 +209,15 @@ async def mount(
                 )
                 logger.debug(f"Emitted skill:unloaded for {skill_name}")
         tool.loaded_skills.clear()
+
+        # Unregister the visibility hook to prevent it persisting after cleanup
+        if unregister_visibility is not None:
+            try:
+                unregister_visibility()
+            except Exception:
+                logger.warning(
+                    "Failed to unregister skills-visibility hook during cleanup"
+                )
 
     return cleanup
 
