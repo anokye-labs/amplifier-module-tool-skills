@@ -531,7 +531,7 @@ The skill lives at ${SKILL_DIR} and is a fork skill.
     async def mock_spawn_fn(**kwargs):
         spawn_calls.append(kwargs)
         return {
-            "response": "Delegate response",
+            "output": "Delegate response",
             "session_id": "sess-123",
             "turn_count": 3,
             "status": "completed",
@@ -573,7 +573,7 @@ Body content here.
     async def mock_spawn_fn(**kwargs):
         spawn_calls.append(kwargs)
         return {
-            "response": "Result",
+            "output": "Result",
             "session_id": "sess-abc",
             "turn_count": 1,
             "status": "completed",
@@ -606,7 +606,7 @@ Body content.
 
     async def mock_spawn_fn(**kwargs):
         return {
-            "response": "The delegate response text",
+            "output": "The delegate response text",
             "session_id": "delegate-session-456",
             "turn_count": 5,
             "status": "completed",
@@ -625,6 +625,10 @@ Body content.
     assert output["status"] == "completed"
     assert output["skill_name"] == "delegate-result-skill"
     assert output["context"] == "fork"
+    # message field frames the fork result for the parent LLM
+    assert "message" in output
+    assert "delegate-result-skill" in output["message"]
+    assert "The delegate response text" in output["message"]
 
 
 @pytest.mark.asyncio
@@ -679,7 +683,7 @@ Body content.
     async def mock_spawn_fn(**kwargs):
         spawn_calls.append(kwargs)
         return {
-            "response": "Result",
+            "output": "Result",
             "session_id": "sess-xyz",
             "turn_count": 2,
             "status": "completed",
@@ -730,7 +734,7 @@ Body content.
     async def mock_spawn_fn(**kwargs):
         spawn_calls.append(kwargs)
         return {
-            "response": "Result",
+            "output": "Result",
             "session_id": "sess-prefs",
             "turn_count": 1,
             "status": "completed",
@@ -959,7 +963,7 @@ Body content.
     async def mock_spawn_fn(**kwargs):
         spawn_calls.append(kwargs)
         return {
-            "response": "Result",
+            "output": "Result",
             "session_id": "sess-at",
             "turn_count": 1,
             "status": "completed",
@@ -1007,7 +1011,7 @@ Body content.
     async def mock_spawn_fn(**kwargs):
         spawn_calls.append(kwargs)
         return {
-            "response": "Result",
+            "output": "Result",
             "session_id": "sess-exact",
             "turn_count": 1,
             "status": "completed",
@@ -1106,7 +1110,7 @@ Body content.
     async def mock_spawn_fn(**kwargs):
         spawn_calls.append(kwargs)
         return {
-            "response": "Result",
+            "output": "Result",
             "session_id": "sess-no-tools",
             "turn_count": 1,
             "status": "completed",

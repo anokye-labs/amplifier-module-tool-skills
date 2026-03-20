@@ -706,10 +706,18 @@ Skill Discovery:
             )
 
             # 7. Return ToolResult with delegate output fields
+            # spawn_fn returns the subagent's output under the "output" key (not "response")
+            response_text = result.get("output", "")
             return ToolResult(
                 success=True,
                 output={
-                    "response": result.get("response"),
+                    "response": response_text,
+                    "message": (
+                        f"The /{skill_name} skill executed successfully as a forked subagent. "
+                        f"Here are the results:\n\n{response_text}"
+                        if response_text
+                        else f"The /{skill_name} skill completed but returned no output."
+                    ),
                     "session_id": result.get("session_id"),
                     "skill_name": skill_name,
                     "context": "fork",
