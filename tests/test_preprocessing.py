@@ -6,7 +6,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from amplifier_module_tool_skills.preprocessing import preprocess
+from amplifier_module_tool_skills.preprocessing import (
+    MAX_SHELL_OUTPUT_BYTES,
+    preprocess,
+)
 
 
 @pytest.mark.asyncio
@@ -215,8 +218,6 @@ async def test_shell_output_wrapped_in_delimiters(tmp_path):
 @pytest.mark.asyncio
 async def test_shell_output_truncated_at_max_size(tmp_path):
     """Shell output larger than MAX_SHELL_OUTPUT_BYTES is truncated with a notice."""
-    from amplifier_module_tool_skills.preprocessing import MAX_SHELL_OUTPUT_BYTES
-
     # Create a file larger than the limit
     large_file = tmp_path / "large.bin"
     large_file.write_bytes(b"x" * (MAX_SHELL_OUTPUT_BYTES + 1000))

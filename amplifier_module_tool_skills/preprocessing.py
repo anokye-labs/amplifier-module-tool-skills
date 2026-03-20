@@ -129,7 +129,9 @@ async def _run_shell_command(command: str, cwd: Path) -> str:
         cwd: Working directory for the command.
 
     Returns:
-        Stripped stdout on success, or an inline error string on failure/timeout.
+        Empty string if output is empty, otherwise ``<shell-output>...</shell-output>``-wrapped
+        (and truncated at MAX_SHELL_OUTPUT_BYTES if over limit) stdout on success, or an inline
+        error string on failure/timeout.
     """
     try:
         proc = await asyncio.create_subprocess_shell(
@@ -163,7 +165,9 @@ async def _run_shell_command(command: str, cwd: Path) -> str:
         output = stdout_bytes.decode(errors="replace").strip()
         if not output:
             return ""
-        if len(output) > MAX_SHELL_OUTPUT_BYTES:
+        if (
+            len(output) > MAX_SHELL_OUTPUT_BYTES
+        ):  # len() approximates bytes for typical ASCII shell output
             output = (
                 output[:MAX_SHELL_OUTPUT_BYTES]
                 + f"[truncated — output exceeded {MAX_SHELL_OUTPUT_BYTES} bytes]"
