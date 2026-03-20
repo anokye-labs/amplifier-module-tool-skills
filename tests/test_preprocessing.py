@@ -102,12 +102,41 @@ async def test_shell_multiple_patterns_all_replaced(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_shell_substitution_runs_before_shell_execution(tmp_path):
-    """String substitution ($ARGUMENTS etc.) runs before shell execution."""
-    # $ARGUMENTS is substituted to "world", then !`echo world` runs
+async def test_shell_commands_cannot_see_user_arguments(tmp_path):
+    """Shell commands cannot see user arguments — $ARGUMENTS is substituted AFTER shell runs."""
+    # With safe pipeline: shell runs `echo $ARGUMENTS` where $ARGUMENTS is an unset
+    # shell env var (expands to empty string) — user's "world" never reaches the shell.
     body = "!`echo $ARGUMENTS`"
     result = await preprocess(body, skill_dir=tmp_path, arguments="world")
-    assert result == "world"
+    assert "world" not in result
+
+
+@pytest.mark.asyncio
+async def test_user_variables_substituted_after_shell_execution(tmp_path):
+    """$ARGUMENTS is substituted after shell execution — both work correctly together."""
+    # Shell runs !`echo safe`, then $ARGUMENTS is substituted with user input
+    body = "!`echo safe` and $ARGUMENTS"
+    result = await preprocess(body, skill_dir=tmp_path, arguments="user-input")
+    assert result == "safe and user-input"
+
+
+@pytest.mark.asyncio
+async def test_shell_injection_via_arguments_prevented(tmp_path):
+    """Malicious arguments containing shell metacharacters cannot reach the shell.
+
+    The injection vector is $ARGUMENTS embedded inside a !`...` shell pattern.
+    With the OLD (unsafe) pipeline, $ARGUMENTS would be substituted before shell
+    execution, turning !`echo hello$ARGUMENTS` into !`echo hello; echo INJECTED`,
+    executing arbitrary commands. With the SAFE pipeline, the shell only sees
+    `echo hello$ARGUMENTS` where $ARGUMENTS is an unset env var → empty string.
+    """
+    # $ARGUMENTS is inside the shell command — the classic injection vector
+    body = "!`echo hello$ARGUMENTS`"
+    malicious_args = "; echo INJECTED"
+    result = await preprocess(body, skill_dir=tmp_path, arguments=malicious_args)
+    # With safe pipeline: shell runs `echo hello` (ARGUMENTS env var is empty/unset)
+    # → output is "hello". Injected command never executes.
+    assert "INJECTED" not in result
 
 
 @pytest.mark.asyncio
@@ -122,7 +151,9 @@ async def test_normal_backticks_not_affected(tmp_path):
 async def test_execute_shell_false_skips_shell_commands(tmp_path):
     """execute_shell=False prevents !`command` execution but keeps ${SKILL_DIR} substitution."""
     body = "Dir: ${SKILL_DIR}, Command: !`echo hello`"
-    result = await preprocess(body, skill_dir=tmp_path, arguments=None, execute_shell=False)
+    result = await preprocess(
+        body, skill_dir=tmp_path, arguments=None, execute_shell=False
+    )
     # Shell command NOT executed — pattern preserved as-is
     assert "!`echo hello`" in result
     # Variable substitution still happens

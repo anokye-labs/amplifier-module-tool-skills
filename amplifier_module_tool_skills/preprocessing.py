@@ -1,8 +1,9 @@
 """Preprocessing pipeline for skill body content.
 
 Handles string substitution and shell command execution in order:
-1. String substitution ($ARGUMENTS, positional $N, ${SKILL_DIR})
-2. Shell preprocessing (!`command` patterns)
+1. System variable substitution (${SKILL_DIR}) — safe, platform-provided, runs BEFORE shell
+2. Shell preprocessing (!`command` patterns) — gated by execute_shell
+3. User variable substitution ($ARGUMENTS, positional $N) — user input, runs AFTER shell
 """
 
 from __future__ import annotations
@@ -18,37 +19,48 @@ logger = logging.getLogger(__name__)
 _SHELL_PATTERN = re.compile(r"!`([^`]+)`")
 
 
-def _substitute_variables(
-    body: str,
-    skill_dir: Path,
-    arguments: str | None,
-) -> str:
-    """Replace variable placeholders in body text.
+def _substitute_system_variables(body: str, skill_dir: Path) -> str:
+    """Replace system variable placeholders in body text.
+
+    Runs BEFORE shell execution. Only safe, platform-provided variables.
 
     Replacements performed:
     - ${SKILL_DIR}  → absolute skill directory path
-    - $ARGUMENTS    → full argument string (empty string if None)
-    - $0, $1, $2, … → individual positional args (empty string if beyond args)
 
     Args:
         body: Raw skill body text.
         skill_dir: Path to the skill directory.
+
+    Returns:
+        Body with system variable placeholders substituted.
+    """
+    body = body.replace("${SKILL_DIR}", str(skill_dir))
+    return body
+
+
+def _substitute_user_variables(body: str, arguments: str | None) -> str:
+    """Replace user variable placeholders in body text.
+
+    Runs AFTER shell execution. Contains user input — must not reach the shell.
+
+    Replacements performed:
+    - $ARGUMENTS    → full argument string (empty string if None)
+    - $0, $1, $2, … → individual positional args (empty string if beyond args)
+
+    Args:
+        body: Body text after shell execution.
         arguments: Full argument string passed by the user, or None.
 
     Returns:
-        Body with all variable placeholders substituted.
+        Body with user variable placeholders substituted.
     """
-    # Resolve $ARGUMENTS early (before positional so "$ARGUMENTS" isn't split)
     args_str = arguments if arguments is not None else ""
     positional = args_str.split() if args_str else []
 
-    # 1. ${SKILL_DIR}
-    body = body.replace("${SKILL_DIR}", str(skill_dir))
-
-    # 2. $ARGUMENTS
+    # $ARGUMENTS
     body = body.replace("$ARGUMENTS", args_str)
 
-    # 3. Positional $N — replace from highest index down to avoid $1 matching inside $10
+    # Positional $N — replace from highest index down to avoid $1 matching inside $10
     def _replace_positional(match: re.Match[str]) -> str:
         idx = int(match.group(1))
         return positional[idx] if idx < len(positional) else ""
@@ -66,7 +78,7 @@ async def _execute_shell_commands(body: str, skill_dir: Path) -> str:
     On failure or timeout (30 s), an inline error message is injected.
 
     Args:
-        body: Body text after variable substitution.
+        body: Body text after system variable substitution.
         skill_dir: Path to the skill directory (used as cwd).
 
     Returns:
@@ -136,8 +148,12 @@ async def preprocess(
     """Preprocess skill body content through the full pipeline.
 
     Pipeline order:
-    1. String substitution (${SKILL_DIR}, $ARGUMENTS, $N positional)
+    1. System variable substitution (${SKILL_DIR}) — safe, platform-provided
     2. Shell command execution (!`command` patterns) — only when execute_shell=True
+    3. User variable substitution ($ARGUMENTS, $N positional) — user input, after shell
+
+    This ordering prevents shell injection: user-supplied arguments are never
+    present in the body when shell commands execute.
 
     Args:
         body: Raw skill body text.
@@ -150,7 +166,8 @@ async def preprocess(
     Returns:
         Preprocessed body text ready for delivery.
     """
-    body = _substitute_variables(body, skill_dir, arguments)
+    body = _substitute_system_variables(body, skill_dir)
     if execute_shell:
         body = await _execute_shell_commands(body, skill_dir)
+    body = _substitute_user_variables(body, arguments)
     return body
