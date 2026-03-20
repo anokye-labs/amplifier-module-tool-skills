@@ -69,36 +69,61 @@ class SkillsVisibilityHook:
     def _format_skills_list(self) -> str:
         """Format skills list as markdown with XML boundaries.
 
+        Partitions skills into two sections:
+        - Regular skills (disable_model_invocation=False): shown under 'Available skills'
+          with max_visible cap
+        - User-invoked skills (disable_model_invocation=True): shown under 'User-invoked
+          skills' with no cap
+
         Returns:
             Formatted skills list string, or empty string if no skills
         """
         if not self.skills:
             return ""
 
-        # Filter out skills with disable_model_invocation=True
-        visible_skills = {
+        # Partition skills into regular and user-invoked
+        regular_skills = {
             name: meta
             for name, meta in self.skills.items()
             if not getattr(meta, "disable_model_invocation", False)
         }
+        user_invoked_skills = {
+            name: meta
+            for name, meta in self.skills.items()
+            if getattr(meta, "disable_model_invocation", False)
+        }
 
-        if not visible_skills:
+        # Return empty string only when both partitions are empty
+        if not regular_skills and not user_invoked_skills:
             return ""
 
-        # Sort and limit using filtered visible_skills
-        skills_items = sorted(visible_skills.items())[: self.max_visible]
+        lines = []
 
-        lines = ["Available skills (use load_skill tool):"]
-        lines.append("")
-
-        for name, metadata in skills_items:
-            lines.append(f"- **{name}**: {metadata.description}")
-
-        # Show truncation if applicable (based on filtered visible_skills count)
-        if len(visible_skills) > self.max_visible:
-            remaining = len(visible_skills) - self.max_visible
+        # Build regular skills section (with max_visible cap)
+        if regular_skills:
+            skills_items = sorted(regular_skills.items())[: self.max_visible]
+            lines.append("Available skills (use load_skill tool):")
             lines.append("")
-            lines.append(f"_({remaining} more - use load_skill(list=true) to see all)_")
+            for name, metadata in skills_items:
+                lines.append(f"- **{name}**: {metadata.description}")
+            # Show truncation if applicable
+            if len(regular_skills) > self.max_visible:
+                remaining = len(regular_skills) - self.max_visible
+                lines.append("")
+                lines.append(
+                    f"_({remaining} more - use load_skill(list=true) to see all)_"
+                )
+
+        # Build user-invoked skills section (no cap)
+        if user_invoked_skills:
+            if lines:
+                lines.append("")
+            lines.append(
+                "User-invoked skills (use load_skill or suggest the /command to the user):"
+            )
+            lines.append("")
+            for name, metadata in sorted(user_invoked_skills.items()):
+                lines.append(f"- **{name}**: {metadata.description}")
 
         skills_content = "\n".join(lines)
 

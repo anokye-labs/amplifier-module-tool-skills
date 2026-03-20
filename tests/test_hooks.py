@@ -208,8 +208,8 @@ async def test_ephemeral_flag_propagates(sample_skills):
 
 
 @pytest.mark.asyncio
-async def test_hides_skill_with_disable_model_invocation_true():
-    """Skills with disable_model_invocation=True must not appear in context injection."""
+async def test_disable_model_invocation_skill_in_user_invoked_section():
+    """Skills with disable_model_invocation=True must appear in the user-invoked section, not regular section."""
     skills = {
         "visible-skill": SkillMetadata(
             name="visible-skill",
@@ -218,10 +218,10 @@ async def test_hides_skill_with_disable_model_invocation_true():
             source="/skills",
             disable_model_invocation=False,
         ),
-        "hidden-skill": SkillMetadata(
-            name="hidden-skill",
-            description="This skill should be hidden",
-            path=Path("/skills/hidden-skill/SKILL.md"),
+        "user-invoked-skill": SkillMetadata(
+            name="user-invoked-skill",
+            description="This skill should be in user-invoked section",
+            path=Path("/skills/user-invoked-skill/SKILL.md"),
             source="/skills",
             disable_model_invocation=True,
         ),
@@ -232,7 +232,9 @@ async def test_hides_skill_with_disable_model_invocation_true():
 
     assert result.action == "inject_context"
     assert "visible-skill" in result.context_injection
-    assert "hidden-skill" not in result.context_injection
+    # user-invoked skill should be present in the user-invoked section
+    assert "user-invoked-skill" in result.context_injection
+    assert "User-invoked skills" in result.context_injection
 
 
 @pytest.mark.asyncio
@@ -257,8 +259,8 @@ async def test_shows_skill_without_disable_model_invocation():
 
 
 @pytest.mark.asyncio
-async def test_all_skills_hidden_returns_continue():
-    """When all skills have disable_model_invocation=True, hook should return continue."""
+async def test_all_skills_disable_model_invocation_shows_user_invoked_section():
+    """When all skills have disable_model_invocation=True, hook should return inject_context with user-invoked section."""
     skills = {
         "hidden-1": SkillMetadata(
             name="hidden-1",
@@ -279,8 +281,11 @@ async def test_all_skills_hidden_returns_continue():
     hook = SkillsVisibilityHook(skills, {})
     result = await hook.on_provider_request("provider:request", {})
 
-    # No visible skills → should behave like no skills
-    assert result.action == "continue"
+    # All skills are user-invoked → should still inject context with user-invoked section
+    assert result.action == "inject_context"
+    assert "User-invoked skills" in result.context_injection
+    assert "hidden-1" in result.context_injection
+    assert "hidden-2" in result.context_injection
 
 
 @pytest.mark.asyncio
@@ -314,6 +319,80 @@ async def test_truncation_count_uses_filtered_visible_skills():
     assert result.action == "inject_context"
     # 15 visible skills with max 10 shown → 5 more remaining
     assert "(5 more" in result.context_injection
-    # Hidden skills must not appear
-    assert "hidden-000" not in result.context_injection
-    assert "hidden-001" not in result.context_injection
+    # User-invoked skills appear in their own section
+    assert "hidden-000" in result.context_injection
+    assert "hidden-001" in result.context_injection
+    assert "User-invoked skills" in result.context_injection
+
+
+# --- User-invoked skills section tests ---
+
+
+@pytest.mark.asyncio
+async def test_user_invoked_skills_shown_in_separate_section():
+    """Skills with disable_model_invocation=True appear under 'User-invoked skills' heading."""
+    skills = {
+        "regular-skill": SkillMetadata(
+            name="regular-skill",
+            description="A regular skill",
+            path=Path("/skills/regular-skill/SKILL.md"),
+            source="/skills",
+            disable_model_invocation=False,
+        ),
+        "cmd-skill": SkillMetadata(
+            name="cmd-skill",
+            description="A user-invoked command skill",
+            path=Path("/skills/cmd-skill/SKILL.md"),
+            source="/skills",
+            disable_model_invocation=True,
+        ),
+    }
+
+    hook = SkillsVisibilityHook(skills, {})
+    result = await hook.on_provider_request("provider:request", {})
+
+    assert result.action == "inject_context"
+    content = result.context_injection
+    # Regular skill in available section
+    assert "Available skills (use load_skill tool):" in content
+    assert "regular-skill" in content
+    # User-invoked skill in its own section
+    assert (
+        "User-invoked skills (use load_skill or suggest the /command to the user):"
+        in content
+    )
+    assert "cmd-skill" in content
+
+
+@pytest.mark.asyncio
+async def test_user_invoked_section_not_shown_when_none(sample_skills):
+    """When no skills have disable_model_invocation=True, no user-invoked section appears."""
+    # sample_skills fixture has no disable_model_invocation=True skills
+    hook = SkillsVisibilityHook(sample_skills, {})
+    result = await hook.on_provider_request("provider:request", {})
+
+    assert result.action == "inject_context"
+    assert "User-invoked skills" not in result.context_injection
+
+
+@pytest.mark.asyncio
+async def test_only_user_invoked_skills_still_injects():
+    """When ALL skills have disable_model_invocation=True, hook returns inject_context (not continue)."""
+    skills = {
+        "only-cmd-skill": SkillMetadata(
+            name="only-cmd-skill",
+            description="The only skill, and it is user-invoked",
+            path=Path("/skills/only-cmd-skill/SKILL.md"),
+            source="/skills",
+            disable_model_invocation=True,
+        ),
+    }
+
+    hook = SkillsVisibilityHook(skills, {})
+    result = await hook.on_provider_request("provider:request", {})
+
+    assert result.action == "inject_context"
+    assert "User-invoked skills" in result.context_injection
+    assert "only-cmd-skill" in result.context_injection
+    # No regular section since there are no regular skills
+    assert "Available skills (use load_skill tool):" not in result.context_injection
