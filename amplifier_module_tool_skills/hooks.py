@@ -27,7 +27,7 @@ class SkillsVisibilityHook:
         """
         self.skills = skills  # Reference to tool's skills dict
         self.enabled = config.get("enabled", True)
-        self.inject_role = config.get("inject_role", "user")
+        self.inject_role = config.get("inject_role", "system")
         self.max_visible = config.get("max_skills_visible", 50)
         self.ephemeral = config.get("ephemeral", True)
         self.priority = config.get("priority", 20)

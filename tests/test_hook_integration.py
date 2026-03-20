@@ -208,6 +208,33 @@ description: Test skill {i}
 
 
 @pytest.mark.asyncio
+async def test_hook_injects_as_system_role_by_default(tmp_path):
+    """Test that SkillsVisibilityHook uses 'system' as the default inject_role.
+
+    Skills visibility injection is a system-level concern and must default to
+    'system' role to ensure proper context scoping by LLM providers.
+    """
+    skill_dir = tmp_path / "test-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text("""---
+name: test-skill
+description: Test skill for default role testing
+---
+# Test Content""")
+
+    from amplifier_module_tool_skills.discovery import discover_skills
+    skills = discover_skills(tmp_path)
+
+    # Create hook with no inject_role config — should default to 'system'
+    hook = SkillsVisibilityHook(skills, {})
+
+    result = await hook.on_provider_request("provider:request", {})
+
+    assert result.action == "inject_context"
+    assert result.context_injection_role == "system"
+
+
+@pytest.mark.asyncio
 async def test_mount_with_visibility_defaults(tmp_path):
     """Test that visibility defaults to enabled."""
     coordinator = MockCoordinator()

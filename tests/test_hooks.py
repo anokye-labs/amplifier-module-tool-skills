@@ -129,7 +129,7 @@ async def test_default_configuration(sample_skills):
     hook = SkillsVisibilityHook(sample_skills, {})
 
     assert hook.enabled is True
-    assert hook.inject_role == "user"
+    assert hook.inject_role == "system"
     assert hook.max_visible == 50
     assert hook.ephemeral is True
     assert hook.priority == 20

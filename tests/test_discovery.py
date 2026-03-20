@@ -7,6 +7,7 @@ import pytest
 from amplifier_module_tool_skills.discovery import discover_skills
 from amplifier_module_tool_skills.discovery import extract_skill_body
 from amplifier_module_tool_skills.discovery import parse_skill_frontmatter
+from amplifier_module_tool_skills.sources import is_remote_source
 
 
 def test_parse_skill_frontmatter_valid():
@@ -92,6 +93,24 @@ def test_discover_skills_nonexistent():
     """Test discovering from non-existent directory."""
     skills = discover_skills(Path("/nonexistent/path"))
     assert len(skills) == 0
+
+
+def test_http_source_rejected():
+    """Verify is_remote_source rejects http:// to prevent MITM attacks.
+
+    https:// and git+https:// are accepted as secure remote sources.
+    http:// must be rejected (plaintext, vulnerable to MITM).
+    Local paths must also return False.
+    """
+    # Secure remote sources — must be accepted
+    assert is_remote_source("https://example.com/skills") is True
+    assert is_remote_source("git+https://github.com/org/repo") is True
+
+    # Insecure http:// — must be rejected (MITM risk)
+    assert is_remote_source("http://example.com/skills") is False
+
+    # Local paths — must return False
+    assert is_remote_source("/local/path/to/skills") is False
 
 
 def test_discover_skills_through_symlink(tmp_path: Path):
