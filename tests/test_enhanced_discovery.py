@@ -553,7 +553,7 @@ The skill lives at ${SKILL_DIR} and is a fork skill.
 
 @pytest.mark.asyncio
 async def test_fork_skill_spawn_fn_receives_correct_agent_name(tmp_path: Path):
-    """spawn_fn receives correct agent_name format 'skill:{name}'."""
+    """spawn_fn receives agent_name='self' for fork execution."""
     from amplifier_module_tool_skills import SkillsTool
 
     skill_dir = tmp_path / "named-fork-skill"
@@ -584,7 +584,7 @@ Body content here.
     await tool._load_skill("named-fork-skill")
 
     assert len(spawn_calls) == 1
-    assert spawn_calls[0]["agent_name"] == "skill:named-fork-skill"
+    assert spawn_calls[0]["agent_name"] == "self"
 
 
 @pytest.mark.asyncio

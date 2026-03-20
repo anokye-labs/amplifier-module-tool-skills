@@ -695,7 +695,7 @@ Skill Discovery:
 
             # 6. Call spawn_fn with assembled arguments
             result = await spawn_fn(
-                agent_name=f"skill:{skill_name}",
+                agent_name="self",
                 instruction=processed_body,
                 parent_session=parent_session,
                 agent_configs=agent_configs,
