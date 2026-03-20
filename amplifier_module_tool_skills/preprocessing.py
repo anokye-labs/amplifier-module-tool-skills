@@ -20,6 +20,10 @@ logger = logging.getLogger(__name__)
 # Matches !`command` patterns for shell execution
 _SHELL_PATTERN = re.compile(r"!`([^`]+)`")
 
+# Maximum allowed shell output size. Output beyond this is truncated to prevent
+# large or adversarial command output from flooding the AI context window.
+MAX_SHELL_OUTPUT_BYTES = 1_048_576  # 1 MB
+
 # Only these environment variables are passed to subprocesses spawned by shell commands.
 # This prevents API keys and secrets from leaking into subprocess environments.
 _SAFE_ENV_KEYS: frozenset[str] = frozenset(
@@ -156,7 +160,15 @@ async def _run_shell_command(command: str, cwd: Path) -> str:
             )
             return f"[preprocessing error: command failed (exit {proc.returncode}): {command}]"
 
-        return stdout_bytes.decode(errors="replace").strip()
+        output = stdout_bytes.decode(errors="replace").strip()
+        if not output:
+            return ""
+        if len(output) > MAX_SHELL_OUTPUT_BYTES:
+            output = (
+                output[:MAX_SHELL_OUTPUT_BYTES]
+                + f"[truncated — output exceeded {MAX_SHELL_OUTPUT_BYTES} bytes]"
+            )
+        return f"<shell-output>{output}</shell-output>"
 
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"Shell command error: {command!r} — {exc}")

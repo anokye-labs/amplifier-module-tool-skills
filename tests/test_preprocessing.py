@@ -63,18 +63,18 @@ async def test_body_without_markers_unchanged():
 
 @pytest.mark.asyncio
 async def test_shell_command_execution(tmp_path):
-    """!`command` patterns are executed and replaced with stdout output."""
+    """!`command` patterns are executed and replaced with wrapped stdout output."""
     body = "Version: !`echo hello`"
     result = await preprocess(body, skill_dir=tmp_path, arguments=None)
-    assert result == "Version: hello"
+    assert result == "Version: <shell-output>hello</shell-output>"
 
 
 @pytest.mark.asyncio
 async def test_shell_echo_hello_world(tmp_path):
-    """!`echo hello-world` is replaced with 'hello-world' (hyphenated output)."""
+    """!`echo hello-world` is replaced with wrapped 'hello-world' (hyphenated output)."""
     body = "!`echo hello-world`"
     result = await preprocess(body, skill_dir=tmp_path, arguments=None)
-    assert result == "hello-world"
+    assert result == "<shell-output>hello-world</shell-output>"
 
 
 @pytest.mark.asyncio
@@ -92,7 +92,7 @@ async def test_shell_command_uses_skill_dir_as_cwd(tmp_path):
     (tmp_path / "hello.txt").write_text("from-skill-dir\n")
     body = "!`cat hello.txt`"
     result = await preprocess(body, skill_dir=tmp_path, arguments=None)
-    assert result == "from-skill-dir"
+    assert result == "<shell-output>from-skill-dir</shell-output>"
 
 
 @pytest.mark.asyncio
@@ -100,7 +100,10 @@ async def test_shell_multiple_patterns_all_replaced(tmp_path):
     """Multiple !`command` patterns in a body are all replaced."""
     body = "A=!`echo alpha` B=!`echo beta`"
     result = await preprocess(body, skill_dir=tmp_path, arguments=None)
-    assert result == "A=alpha B=beta"
+    assert (
+        result
+        == "A=<shell-output>alpha</shell-output> B=<shell-output>beta</shell-output>"
+    )
 
 
 @pytest.mark.asyncio
@@ -111,6 +114,8 @@ async def test_shell_commands_cannot_see_user_arguments(tmp_path):
     body = "!`echo $ARGUMENTS`"
     result = await preprocess(body, skill_dir=tmp_path, arguments="world")
     assert "world" not in result
+    # empty shell output → no wrapper (empty string returned)
+    assert "<shell-output>" not in result
 
 
 @pytest.mark.asyncio
@@ -119,7 +124,7 @@ async def test_user_variables_substituted_after_shell_execution(tmp_path):
     # Shell runs !`echo safe`, then $ARGUMENTS is substituted with user input
     body = "!`echo safe` and $ARGUMENTS"
     result = await preprocess(body, skill_dir=tmp_path, arguments="user-input")
-    assert result == "safe and user-input"
+    assert result == "<shell-output>safe</shell-output> and user-input"
 
 
 @pytest.mark.asyncio
@@ -196,3 +201,26 @@ async def test_shell_timeout_kills_process_group(tmp_path):
 
     # Verify result contains 'timed out'
     assert "timed out" in result
+
+
+@pytest.mark.asyncio
+async def test_shell_output_wrapped_in_delimiters(tmp_path):
+    """Shell command output is wrapped in <shell-output>...</shell-output> delimiters."""
+    body = "!`echo hello`"
+    result = await preprocess(body, skill_dir=tmp_path, arguments=None)
+    assert "<shell-output>" in result
+    assert "</shell-output>" in result
+
+
+@pytest.mark.asyncio
+async def test_shell_output_truncated_at_max_size(tmp_path):
+    """Shell output larger than MAX_SHELL_OUTPUT_BYTES is truncated with a notice."""
+    from amplifier_module_tool_skills.preprocessing import MAX_SHELL_OUTPUT_BYTES
+
+    # Create a file larger than the limit
+    large_file = tmp_path / "large.bin"
+    large_file.write_bytes(b"x" * (MAX_SHELL_OUTPUT_BYTES + 1000))
+    body = "!`cat large.bin`"
+    result = await preprocess(body, skill_dir=tmp_path, arguments=None)
+    assert "[truncated" in result
+    assert len(result) < MAX_SHELL_OUTPUT_BYTES + 500  # total length is bounded
