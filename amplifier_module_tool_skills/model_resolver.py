@@ -40,6 +40,8 @@ def resolve_skill_model(
     model_role: str | list[str] | None = None,
     model: str | None = None,
     agent: str | None = None,
+    config_model_hints: dict[str, str] | None = None,
+    config_agent_archetypes: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Resolve the model selection using a 5-level precedence chain.
 
@@ -49,11 +51,16 @@ def resolve_skill_model(
         model_role: Amplifier-native semantic role string, or a list of roles
             (first element is used).
         model: Cross-platform model hint (e.g. "haiku", "sonnet", "opus").
-            Translated to a semantic role via MODEL_HINT_TO_ROLE.  Unknown
-            hints fall back to "general".
+            Translated to a semantic role via MODEL_HINT_TO_ROLE merged with
+            config_model_hints overrides.  Unknown hints fall back to "general".
         agent: Agent archetype name (e.g. "Explore", "Code").  Translated to a
-            semantic role via AGENT_ARCHETYPE_TO_ROLE.  Unknown archetypes fall
-            back to "general".
+            semantic role via AGENT_ARCHETYPE_TO_ROLE merged with
+            config_agent_archetypes overrides.  Unknown archetypes fall back to
+            "general".
+        config_model_hints: Optional dict of model hint -> role overrides.
+            Merged on top of MODEL_HINT_TO_ROLE (overrides win).
+        config_agent_archetypes: Optional dict of archetype -> role overrides.
+            Merged on top of AGENT_ARCHETYPE_TO_ROLE (overrides win).
 
     Returns:
         Dict with keys:
@@ -61,6 +68,18 @@ def resolve_skill_model(
             model_role          — resolved semantic role (or None)
             provider_preferences — resolved provider chain (or None)
     """
+    # Build effective lookup tables: config hints are iterated first (priority in
+    # substring matching) and their values override defaults for the same key.
+    config_h = config_model_hints or {}
+    effective_hints = {
+        **config_h,
+        **{k: v for k, v in MODEL_HINT_TO_ROLE.items() if k not in config_h},
+    }
+    effective_archetypes = {
+        **AGENT_ARCHETYPE_TO_ROLE,
+        **(config_agent_archetypes or {}),
+    }
+
     # Level 1 — provider_preferences (highest)
     if provider_preferences is not None:
         return {
@@ -85,7 +104,7 @@ def resolve_skill_model(
         # Normalise: strip version suffixes, lower-case, then match substrings
         model_lower = model.lower()
         resolved_role = "general"
-        for hint, role in MODEL_HINT_TO_ROLE.items():
+        for hint, role in effective_hints.items():
             if hint in model_lower:
                 resolved_role = role
                 break
@@ -97,7 +116,7 @@ def resolve_skill_model(
 
     # Level 4 — agent archetype
     if agent is not None:
-        resolved_role = AGENT_ARCHETYPE_TO_ROLE.get(agent, "general")
+        resolved_role = effective_archetypes.get(agent, "general")
         return {
             "source": "agent",
             "model_role": resolved_role,

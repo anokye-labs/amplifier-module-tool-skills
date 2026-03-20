@@ -80,3 +80,33 @@ def test_unknown_model_hint_falls_back_to_general():
     assert result["source"] == "model"
     assert result["model_role"] == "general"
     assert result["provider_preferences"] is None
+
+
+def test_custom_model_hint_overrides_default():
+    """config_model_hints can add new hints and override existing ones."""
+    # New hint: 'gemini' -> 'reasoning'
+    result = resolve_skill_model(
+        model="gemini-pro",
+        config_model_hints={"gemini": "reasoning"},
+    )
+    assert result["source"] == "model"
+    assert result["model_role"] == "reasoning"
+
+    # Override existing default: 'haiku' -> 'coding' (default is 'fast')
+    result = resolve_skill_model(
+        model="claude-haiku-3",
+        config_model_hints={"haiku": "coding"},
+    )
+    assert result["source"] == "model"
+    assert result["model_role"] == "coding"
+
+
+def test_custom_agent_archetype_overrides_default():
+    """config_agent_archetypes can add new archetypes and override existing ones."""
+    # New archetype: 'Analyze' -> 'reasoning'
+    result = resolve_skill_model(
+        agent="Analyze",
+        config_agent_archetypes={"Analyze": "reasoning"},
+    )
+    assert result["source"] == "agent"
+    assert result["model_role"] == "reasoning"
