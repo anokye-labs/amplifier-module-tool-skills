@@ -551,6 +551,12 @@ Skill Discovery:
                     "version": metadata.version,
                     "skill_directory": str(metadata.path.parent),
                     "hooks": metadata.hooks,  # Claude Code-compatible hooks config (or None)
+                    # Enriched fields for hooks-shell skill-scoped hook activation
+                    "context": metadata.context,
+                    "allowed_tools": metadata.allowed_tools,
+                    "disable_model_invocation": metadata.disable_model_invocation,
+                    "user_invocable": metadata.user_invocable,
+                    "slash_command": metadata.name,
                 },
             )
 

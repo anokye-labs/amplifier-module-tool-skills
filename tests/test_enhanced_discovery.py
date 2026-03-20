@@ -1,8 +1,51 @@
 """Tests for enhanced skill discovery with new frontmatter fields."""
 
+import pytest
 from pathlib import Path
 
 from amplifier_module_tool_skills.discovery import SkillMetadata, discover_skills
+
+
+# ---------------------------------------------------------------------------
+# Mock infrastructure for skill:loaded event tests
+# ---------------------------------------------------------------------------
+
+
+class MockHooks:
+    """Mock hooks system that tracks registrations and emitted events."""
+
+    def __init__(self):
+        self.registered_hooks = []
+        self.emitted_events = []
+
+    def register(
+        self, event: str, handler, priority: int = 10, name: str | None = None
+    ):
+        self.registered_hooks.append(
+            {"event": event, "handler": handler, "priority": priority, "name": name}
+        )
+
+    async def emit(self, event_name: str, data):
+        self.emitted_events.append((event_name, data))
+
+
+class MockCoordinator:
+    """Mock coordinator for testing event emission."""
+
+    def __init__(self):
+        self.capabilities = {}
+        self.mounted_tools = {}
+        self.hooks = MockHooks()
+        self.config = {}
+
+    def register_capability(self, name: str, value):
+        self.capabilities[name] = value
+
+    def get_capability(self, name: str):
+        return self.capabilities.get(name)
+
+    async def mount(self, category: str, tool, name: str):
+        self.mounted_tools[name] = tool
 
 
 def test_skill_metadata_enhanced_fields_defaults():
@@ -137,3 +180,198 @@ Body content
     skill = skills["snake-case-skill"]
     assert skill.disable_model_invocation is True
     assert skill.user_invocable is False
+
+
+# ---------------------------------------------------------------------------
+# Tests for enriched skill:loaded event (acceptance criteria for task-5)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_skill_loaded_event_includes_context(tmp_path: Path):
+    """skill:loaded event includes context field from metadata."""
+    from amplifier_module_tool_skills import SkillsTool
+
+    skill_dir = tmp_path / "ctx-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        """---
+name: ctx-skill
+description: Skill with context field
+context: fork
+---
+Body content
+"""
+    )
+
+    coordinator = MockCoordinator()
+    tool = SkillsTool({}, coordinator, resolved_dirs=[tmp_path])  # type: ignore[arg-type]
+    await tool._load_skill("ctx-skill")
+
+    events = [e for e in coordinator.hooks.emitted_events if e[0] == "skill:loaded"]
+    assert len(events) == 1
+    event_data = events[0][1]
+    assert "context" in event_data
+    assert event_data["context"] == "fork"
+
+
+@pytest.mark.asyncio
+async def test_skill_loaded_event_includes_disable_model_invocation(tmp_path: Path):
+    """skill:loaded event includes disable_model_invocation field from metadata."""
+    from amplifier_module_tool_skills import SkillsTool
+
+    skill_dir = tmp_path / "dmi-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        """---
+name: dmi-skill
+description: Skill with disable-model-invocation
+disable-model-invocation: true
+---
+Body content
+"""
+    )
+
+    coordinator = MockCoordinator()
+    tool = SkillsTool({}, coordinator, resolved_dirs=[tmp_path])  # type: ignore[arg-type]
+    await tool._load_skill("dmi-skill")
+
+    events = [e for e in coordinator.hooks.emitted_events if e[0] == "skill:loaded"]
+    assert len(events) == 1
+    event_data = events[0][1]
+    assert "disable_model_invocation" in event_data
+    assert event_data["disable_model_invocation"] is True
+
+
+@pytest.mark.asyncio
+async def test_skill_loaded_event_includes_user_invocable(tmp_path: Path):
+    """skill:loaded event includes user_invocable field from metadata."""
+    from amplifier_module_tool_skills import SkillsTool
+
+    skill_dir = tmp_path / "ui-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        """---
+name: ui-skill
+description: Skill with user-invocable false
+user-invocable: false
+---
+Body content
+"""
+    )
+
+    coordinator = MockCoordinator()
+    tool = SkillsTool({}, coordinator, resolved_dirs=[tmp_path])  # type: ignore[arg-type]
+    await tool._load_skill("ui-skill")
+
+    events = [e for e in coordinator.hooks.emitted_events if e[0] == "skill:loaded"]
+    assert len(events) == 1
+    event_data = events[0][1]
+    assert "user_invocable" in event_data
+    assert event_data["user_invocable"] is False
+
+
+@pytest.mark.asyncio
+async def test_skill_loaded_event_includes_allowed_tools(tmp_path: Path):
+    """skill:loaded event includes allowed_tools field from metadata."""
+    from amplifier_module_tool_skills import SkillsTool
+
+    skill_dir = tmp_path / "at-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        """---
+name: at-skill
+description: Skill with allowed-tools
+allowed-tools:
+  - bash
+  - read_file
+---
+Body content
+"""
+    )
+
+    coordinator = MockCoordinator()
+    tool = SkillsTool({}, coordinator, resolved_dirs=[tmp_path])  # type: ignore[arg-type]
+    await tool._load_skill("at-skill")
+
+    events = [e for e in coordinator.hooks.emitted_events if e[0] == "skill:loaded"]
+    assert len(events) == 1
+    event_data = events[0][1]
+    assert "allowed_tools" in event_data
+    assert event_data["allowed_tools"] == ["bash", "read_file"]
+
+
+@pytest.mark.asyncio
+async def test_skill_loaded_event_includes_slash_command(tmp_path: Path):
+    """skill:loaded event includes slash_command field (derived from skill name)."""
+    from amplifier_module_tool_skills import SkillsTool
+
+    skill_dir = tmp_path / "my-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        """---
+name: my-skill
+description: A test skill
+---
+Body content
+"""
+    )
+
+    coordinator = MockCoordinator()
+    tool = SkillsTool({}, coordinator, resolved_dirs=[tmp_path])  # type: ignore[arg-type]
+    await tool._load_skill("my-skill")
+
+    events = [e for e in coordinator.hooks.emitted_events if e[0] == "skill:loaded"]
+    assert len(events) == 1
+    event_data = events[0][1]
+    assert "slash_command" in event_data
+    assert event_data["slash_command"] == "my-skill"
+
+
+@pytest.mark.asyncio
+async def test_skill_loaded_event_all_enriched_fields_present(tmp_path: Path):
+    """skill:loaded event includes all enriched fields with MockCoordinator/MockHooks."""
+    from amplifier_module_tool_skills import SkillsTool
+
+    skill_dir = tmp_path / "full-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        """---
+name: full-skill
+description: Skill with all enhanced fields
+version: 1.2.3
+context: fork
+disable-model-invocation: true
+user-invocable: false
+allowed-tools:
+  - bash
+  - write_file
+---
+Full skill body content
+"""
+    )
+
+    coordinator = MockCoordinator()
+    tool = SkillsTool({}, coordinator, resolved_dirs=[tmp_path])  # type: ignore[arg-type]
+    result = await tool._load_skill("full-skill")
+
+    assert result.success is True
+
+    events = [e for e in coordinator.hooks.emitted_events if e[0] == "skill:loaded"]
+    assert len(events) == 1
+    event_data = events[0][1]
+
+    # Existing fields still present
+    assert event_data["skill_name"] == "full-skill"
+    assert event_data["source"] is not None
+    assert event_data["content_length"] > 0
+    assert event_data["version"] == "1.2.3"
+    assert event_data["skill_directory"] is not None
+    assert "hooks" in event_data
+
+    # New enriched fields
+    assert event_data["context"] == "fork"
+    assert event_data["disable_model_invocation"] is True
+    assert event_data["user_invocable"] is False
+    assert event_data["allowed_tools"] == ["bash", "write_file"]
+    assert event_data["slash_command"] == "full-skill"
