@@ -140,11 +140,20 @@ def discover_skills(skills_dir: Path) -> dict[str, SkillMetadata]:
     # Scan for SKILL.md files (recursive).
     # Use os.walk with followlinks=True to reliably traverse symlinked
     # subdirectories on all supported Python versions (3.12+).
-    skill_files = [
-        Path(root) / "SKILL.md"
-        for root, _dirs, files in os.walk(skills_dir, followlinks=True)
-        if "SKILL.md" in files
-    ]
+    # Boundary checking prevents symlink traversal outside the skills directory
+    # (e.g., a symlink evil -> /etc would otherwise index the entire /etc tree).
+    base_resolved = skills_dir.resolve()
+    skill_files = []
+    for root, _dirs, files in os.walk(skills_dir, followlinks=True):
+        root_resolved = Path(root).resolve()
+        if not root_resolved.is_relative_to(base_resolved):
+            logger.warning(
+                f"Skipping symlink that escapes skill directory boundary: {root} "
+                f"(resolves to {root_resolved}, outside {base_resolved})"
+            )
+            continue
+        if "SKILL.md" in files:
+            skill_files.append(Path(root) / "SKILL.md")
     for skill_file in skill_files:
         try:
             # Parse frontmatter

@@ -119,20 +119,66 @@ def test_discover_skills_through_symlink(tmp_path: Path):
     Python 3.13 changed Path.glob() to not follow symlinks by default.
     This test ensures discover_skills() finds skills inside symlinked
     subdirectories on all supported Python versions.
+
+    The canonical location is inside the skills directory to stay within
+    the boundary enforced by symlink traversal checking.
     """
-    # Create the canonical skill location outside the scan directory
-    canonical = tmp_path / "canonical" / "my-skill"
+    # Create the scan directory
+    scan_dir = tmp_path / "skills"
+    scan_dir.mkdir()
+
+    # Create the canonical skill location INSIDE the scan directory
+    # (boundary-safe symlink: both source and target are within skills/)
+    canonical = scan_dir / "canonical" / "my-skill"
     canonical.mkdir(parents=True)
     (canonical / "SKILL.md").write_text(
         "---\nname: my-skill\ndescription: A symlinked skill\n---\nBody\n"
     )
 
-    # Create the scan directory with a symlink to the canonical location
-    scan_dir = tmp_path / "skills"
-    scan_dir.mkdir()
+    # Create a symlink within skills/ that points to another location within skills/
     os.symlink(canonical, scan_dir / "my-skill")
 
     skills = discover_skills(scan_dir)
     assert "my-skill" in skills, (
         f"Skill in symlinked directory not discovered. Found: {list(skills.keys())}"
+    )
+
+
+def test_symlink_outside_boundary_is_skipped(tmp_path: Path):
+    """Symlinks that escape the skills directory boundary must not be traversed.
+
+    A symlink like ~/.amplifier/skills/evil -> /etc would index the entire
+    /etc tree without boundary checking. This test verifies that discover_skills()
+    skips any directory that resolves outside the base skills directory.
+    """
+    # Create skills base directory with a legitimate skill
+    skills_base = tmp_path / "skills"
+    skills_base.mkdir()
+
+    legit_skill = skills_base / "legit-skill"
+    legit_skill.mkdir()
+    (legit_skill / "SKILL.md").write_text(
+        "---\nname: legit-skill\ndescription: A legitimate skill\n---\nBody\n"
+    )
+
+    # Create an OUTSIDE directory with an evil skill (outside skills_base boundary)
+    outside_dir = tmp_path / "outside"
+    outside_dir.mkdir()
+    evil_skill = outside_dir / "evil-skill"
+    evil_skill.mkdir()
+    (evil_skill / "SKILL.md").write_text(
+        "---\nname: evil-skill\ndescription: Should not be discovered\n---\nBody\n"
+    )
+
+    # Create a symlink inside skills_base that points to the outside directory
+    os.symlink(outside_dir, skills_base / "escape")
+
+    skills = discover_skills(skills_base)
+
+    assert "legit-skill" in skills, (
+        f"Legitimate skill was not discovered. Found: {list(skills.keys())}"
+    )
+    assert "evil-skill" not in skills, (
+        f"Evil skill via symlink escape was discovered but should have been blocked. "
+        f"Found: {list(skills.keys())}"
     )
