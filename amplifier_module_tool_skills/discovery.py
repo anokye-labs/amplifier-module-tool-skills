@@ -44,6 +44,7 @@ class SkillMetadata:
     allowed_tools: list[str] | None = None
     metadata: dict[str, Any] | None = None
     hooks: dict[str, Any] | None = None  # Agent Skills-compatible hooks config
+    trusted: bool = True  # False for remote-source skills; blocks shell execution
     # Enhanced frontmatter fields (Amplifier extended format)
     context: str | None = None  # Execution context (e.g., 'fork')
     agent: str | None = None  # Agent to use (e.g., 'foundation:explorer')

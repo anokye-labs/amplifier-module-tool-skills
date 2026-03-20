@@ -225,3 +225,20 @@ async def test_shell_output_truncated_at_max_size(tmp_path):
     result = await preprocess(body, skill_dir=tmp_path, arguments=None)
     assert "[truncated" in result
     assert len(result) < MAX_SHELL_OUTPUT_BYTES + 500  # total length is bounded
+
+
+@pytest.mark.asyncio
+async def test_untrusted_skill_shell_commands_blocked(tmp_path):
+    """trusted=False blocks shell commands — 'pwned' never executes."""
+    body = "!`echo pwned`"
+    result = await preprocess(body, skill_dir=tmp_path, arguments=None, trusted=False)
+    assert "pwned" not in result
+    assert "[untrusted skill" in result
+
+
+@pytest.mark.asyncio
+async def test_trusted_skill_shell_commands_execute(tmp_path):
+    """trusted=True (default) executes shell commands normally."""
+    body = "!`echo safe`"
+    result = await preprocess(body, skill_dir=tmp_path, arguments=None, trusted=True)
+    assert "<shell-output>safe</shell-output>" in result

@@ -179,18 +179,41 @@ async def _run_shell_command(command: str, cwd: Path) -> str:
         return f"[preprocessing error: {exc}]"
 
 
+def _block_untrusted_shell(body: str) -> str:
+    """Replace !`command` patterns with a blocked placeholder for untrusted skills.
+
+    Called when execute_shell=True but trusted=False (i.e., skill is from a remote
+    source). Prevents remote skill repos from executing arbitrary shell commands.
+
+    Args:
+        body: Body text that may contain !`command` patterns.
+
+    Returns:
+        Body with all !`command` patterns replaced by a blocked notice.
+    """
+
+    def _replace(match: re.Match[str]) -> str:
+        command = match.group(1)
+        logger.warning(f"Blocked shell command from untrusted skill: {command!r}")
+        return "[untrusted skill — shell command blocked]"
+
+    return _SHELL_PATTERN.sub(_replace, body)
+
+
 async def preprocess(
     body: str,
     *,
     skill_dir: Path,
     arguments: str | None,
     execute_shell: bool = True,
+    trusted: bool = True,
 ) -> str:
     """Preprocess skill body content through the full pipeline.
 
     Pipeline order:
     1. System variable substitution (${SKILL_DIR}) — safe, platform-provided
     2. Shell command execution (!`command` patterns) — only when execute_shell=True
+       AND trusted=True. Untrusted (remote) skills have shell commands blocked.
     3. User variable substitution ($ARGUMENTS, $N positional) — user input, after shell
 
     This ordering prevents shell injection: user-supplied arguments are never
@@ -203,12 +226,18 @@ async def preprocess(
         execute_shell: If False, skip shell command execution (!`command` patterns).
             Default is True. Set to False for inline skills to prevent untrusted
             shell execution.
+        trusted: If False, block shell commands instead of executing them.
+            Default is True. Set to False for skills loaded from remote sources
+            (git repos) to prevent arbitrary command execution.
 
     Returns:
         Preprocessed body text ready for delivery.
     """
     body = _substitute_system_variables(body, skill_dir)
     if execute_shell:
-        body = await _execute_shell_commands(body, skill_dir)
+        if trusted:
+            body = await _execute_shell_commands(body, skill_dir)
+        else:
+            body = _block_untrusted_shell(body)
     body = _substitute_user_variables(body, arguments)
     return body

@@ -556,7 +556,10 @@ Skill Discovery:
 
         if metadata.context != "fork":
             body = await preprocess(
-                body, skill_dir=metadata.path.parent, arguments=None, execute_shell=False
+                body,
+                skill_dir=metadata.path.parent,
+                arguments=None,
+                execute_shell=False,
             )
 
         logger.info(f"Loaded skill: {skill_name}")
@@ -626,8 +629,10 @@ Skill Discovery:
             assert self.coordinator is not None
 
             # 1. Preprocess body with skill_dir and arguments
+            # Remote-source skills are untrusted — block shell execution
+            is_trusted = not is_remote_source(metadata.source)
             processed_body = await preprocess(
-                body, skill_dir=metadata.path.parent, arguments=None
+                body, skill_dir=metadata.path.parent, arguments=None, trusted=is_trusted
             )
 
             # 2. Resolve model selection via resolve_skill_model() using metadata fields
