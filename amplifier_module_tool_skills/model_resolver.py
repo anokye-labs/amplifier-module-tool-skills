@@ -71,7 +71,9 @@ def resolve_skill_model(
 
     # Level 2 — model_role
     if model_role is not None:
-        resolved_role = model_role[0] if isinstance(model_role, list) else model_role
+        resolved_role = (
+            model_role[0] if isinstance(model_role, list) and model_role else model_role
+        )
         return {
             "source": "model_role",
             "model_role": resolved_role,

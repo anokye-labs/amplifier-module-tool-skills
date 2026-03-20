@@ -66,6 +66,14 @@ def test_nothing_declared_returns_inherit():
     assert result["provider_preferences"] is None
 
 
+def test_model_role_empty_list_does_not_raise():
+    """Empty list for model_role should not raise IndexError."""
+    result = resolve_skill_model(model_role=[])
+    assert result["source"] == "model_role"
+    assert result["model_role"] == []
+    assert result["provider_preferences"] is None
+
+
 def test_unknown_model_hint_falls_back_to_general():
     """Unknown model hint falls back to 'general' role."""
     result = resolve_skill_model(model="gpt-4o-unknown")
