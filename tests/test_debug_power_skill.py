@@ -74,29 +74,29 @@ def test_debug_skill_body_contains_arguments_placeholder():
 
 
 def test_debug_skill_description_mentions_diagnostics(debug_skill):
-    """Skill description must reference diagnostics / troubleshoot."""
+    """Skill description must reference diagnosing or troubleshooting."""
     desc_lower = debug_skill.description.lower()
-    assert "diagnostic" in desc_lower or "troubleshoot" in desc_lower, (
-        f"Description does not mention diagnostics or troubleshoot: {debug_skill.description!r}"
+    assert "diagnos" in desc_lower or "troubleshoot" in desc_lower, (
+        f"Description does not mention diagnose/diagnostics or troubleshoot: {debug_skill.description!r}"
     )
 
 
 def test_debug_skill_body_describes_diagnostic_steps():
-    """Body must describe a diagnostic process with gather/analyze/report steps."""
+    """Body must describe a diagnostic process: delegate to session-analyst, check config, explain findings."""
     body = extract_skill_body(DEBUG_SKILL_PATH)
     assert body is not None
     body_lower = body.lower()
-    # Should mention gathering diagnostics
-    assert "gather" in body_lower or "diagnostic" in body_lower, (
-        "Body does not describe gathering diagnostics"
+    # Should delegate to session-analyst
+    assert "session-analyst" in body_lower or "delegate" in body_lower, (
+        "Body does not mention delegating to session-analyst"
     )
-    # Should mention analysis
-    assert "analyz" in body_lower or "analysis" in body_lower, (
-        "Body does not describe analysis step"
+    # Should mention checking configuration
+    assert "configuration" in body_lower or "settings" in body_lower, (
+        "Body does not describe checking configuration"
     )
-    # Should mention reporting
-    assert "report" in body_lower or "section" in body_lower, (
-        "Body does not describe report step"
+    # Should mention explaining findings
+    assert "explain" in body_lower or "plain language" in body_lower, (
+        "Body does not describe explaining findings"
     )
 
 

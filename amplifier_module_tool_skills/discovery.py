@@ -28,7 +28,7 @@ class SkillMetadata:
     Required fields: name, description
     Optional fields: version, license, compatibility, allowed-tools, metadata, hooks
 
-    Hooks field follows Claude Code hooks format for skill-scoped hooks that
+    Hooks field follows Agent Skills hooks format for skill-scoped hooks that
     activate when the skill is loaded and deactivate when unloaded.
     """
 
@@ -43,7 +43,7 @@ class SkillMetadata:
     )
     allowed_tools: list[str] | None = None
     metadata: dict[str, Any] | None = None
-    hooks: dict[str, Any] | None = None  # Claude Code-compatible hooks config
+    hooks: dict[str, Any] | None = None  # Agent Skills-compatible hooks config
     # Enhanced frontmatter fields (Amplifier extended format)
     context: str | None = None  # Execution context (e.g., 'fork')
     agent: str | None = None  # Agent to use (e.g., 'foundation:explorer')
@@ -215,7 +215,7 @@ def discover_skills(skills_dir: Path) -> dict[str, SkillMetadata]:
                     f"({len(compatibility)} chars). Continuing with discovery."
                 )
 
-            # Parse hooks field (Claude Code-compatible format)
+            # Parse hooks field (Agent Skills-compatible format)
             # Skills can embed hooks that activate when the skill is loaded
             hooks_config = frontmatter.get("hooks")
             if hooks_config and not isinstance(hooks_config, dict):
