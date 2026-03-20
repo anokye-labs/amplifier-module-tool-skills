@@ -251,22 +251,22 @@ class SkillsDiscovery:
         """
         return self._skills.get(name)
 
-    def get_shortcuts(self) -> list[dict[str, Any]]:
-        """Return only user_invocable skills as CLI shortcut dicts.
+    def get_shortcuts(self) -> dict[str, dict[str, Any]]:
+        """Return only user_invocable skills as a name-keyed shortcut dict.
 
         Returns:
-            List of dicts with 'action', 'description', 'context' keys,
-            one per user_invocable skill.
+            Dict mapping skill name to ``{"description": ..., "context": ...}``,
+            one entry per user_invocable skill.  The ``context`` field indicates
+            how the skill is delivered (e.g. "fork" vs "inline").
         """
-        return [
-            {
-                "action": name,
+        return {
+            name: {
                 "description": metadata.description,
                 "context": metadata.context,
             }
             for name, metadata in self._skills.items()
             if metadata.user_invocable
-        ]
+        }
 
 
 class SkillsTool:

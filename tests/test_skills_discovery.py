@@ -88,7 +88,7 @@ class TestSkillsDiscoveryGetShortcuts:
     """Tests for SkillsDiscovery.get_shortcuts()."""
 
     def test_returns_only_user_invocable(self):
-        """get_shortcuts() returns only skills with user_invocable=True."""
+        """get_shortcuts() returns only skills with user_invocable=True as keys."""
         skills = {
             "public-skill": _make_skill("public-skill", "Public", user_invocable=True),
             "private-skill": _make_skill(
@@ -97,20 +97,18 @@ class TestSkillsDiscoveryGetShortcuts:
         }
         discovery = SkillsDiscovery(skills)
         result = discovery.get_shortcuts()
-        actions = [s["action"] for s in result]
-        assert "public-skill" in actions
-        assert "private-skill" not in actions
+        assert "public-skill" in result
+        assert "private-skill" not in result
 
     def test_has_required_keys(self):
-        """Each shortcut dict has 'action', 'description', 'context' keys."""
+        """Each shortcut value dict has 'description' and 'context' keys."""
         skills = {
             "public-skill": _make_skill("public-skill", "Public", user_invocable=True),
         }
         discovery = SkillsDiscovery(skills)
         result = discovery.get_shortcuts()
         assert len(result) == 1
-        shortcut = result[0]
-        assert "action" in shortcut
+        shortcut = result["public-skill"]
         assert "description" in shortcut
         assert "context" in shortcut
 
@@ -121,10 +119,10 @@ class TestSkillsDiscoveryGetShortcuts:
         }
         discovery = SkillsDiscovery(skills)
         result = discovery.get_shortcuts()
-        assert result[0]["description"] == "My description"
+        assert result["my-skill"]["description"] == "My description"
 
     def test_empty_when_none_user_invocable(self):
-        """get_shortcuts() returns empty list when no user_invocable skills."""
+        """get_shortcuts() returns empty dict when no user_invocable skills."""
         skills = {
             "private-skill": _make_skill(
                 "private-skill", "Private", user_invocable=False
@@ -132,4 +130,4 @@ class TestSkillsDiscoveryGetShortcuts:
         }
         discovery = SkillsDiscovery(skills)
         result = discovery.get_shortcuts()
-        assert result == []
+        assert result == {}
