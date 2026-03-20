@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
 from pathlib import Path
 
@@ -17,6 +18,24 @@ logger = logging.getLogger(__name__)
 
 # Matches !`command` patterns for shell execution
 _SHELL_PATTERN = re.compile(r"!`([^`]+)`")
+
+# Only these environment variables are passed to subprocesses spawned by shell commands.
+# This prevents API keys and secrets from leaking into subprocess environments.
+_SAFE_ENV_KEYS: frozenset[str] = frozenset(
+    {"PATH", "HOME", "TMPDIR", "LANG", "TERM", "USER", "SHELL", "LC_ALL"}
+)
+
+
+def _build_safe_env() -> dict[str, str]:
+    """Build a minimal environment dict for subprocess execution.
+
+    Returns only the keys in _SAFE_ENV_KEYS that are present in os.environ,
+    preventing API keys and other secrets from leaking into subprocesses.
+
+    Returns:
+        Dict containing only the safe subset of the current environment.
+    """
+    return {k: v for k, v in os.environ.items() if k in _SAFE_ENV_KEYS}
 
 
 def _substitute_system_variables(body: str, skill_dir: Path) -> str:
@@ -113,6 +132,7 @@ async def _run_shell_command(command: str, cwd: Path) -> str:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=cwd,
+            env=_build_safe_env(),
         )
         try:
             stdout_bytes, stderr_bytes = await asyncio.wait_for(

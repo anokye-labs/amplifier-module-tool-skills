@@ -148,6 +148,17 @@ async def test_normal_backticks_not_affected(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_shell_commands_use_sanitized_environment(tmp_path, monkeypatch):
+    """API keys and secrets are not visible to subprocesses spawned by shell commands."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-secret-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-openai-secret")
+    body = "!`printenv ANTHROPIC_API_KEY 2>/dev/null || echo NOTSET`"
+    result = await preprocess(body, skill_dir=tmp_path, arguments=None)
+    assert "sk-secret-key" not in result
+    assert "NOTSET" in result
+
+
+@pytest.mark.asyncio
 async def test_execute_shell_false_skips_shell_commands(tmp_path):
     """execute_shell=False prevents !`command` execution but keeps ${SKILL_DIR} substitution."""
     body = "Dir: ${SKILL_DIR}, Command: !`echo hello`"
