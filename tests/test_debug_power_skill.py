@@ -1,5 +1,7 @@
 """Tests for the /debug power skill in amplifier-bundle-skills."""
 
+import pytest
+
 from pathlib import Path
 
 from amplifier_module_tool_skills.discovery import discover_skills, extract_skill_body
@@ -12,6 +14,13 @@ BUNDLE_SKILLS_DIR = (
 )
 
 DEBUG_SKILL_PATH = BUNDLE_SKILLS_DIR / "debug" / "SKILL.md"
+
+
+@pytest.fixture(scope="module")
+def debug_skill():
+    """Load and return the debug skill once per module, avoiding redundant discover_skills() calls."""
+    skills = discover_skills(BUNDLE_SKILLS_DIR)
+    return skills.get("debug")
 
 
 def test_debug_skill_file_exists():
@@ -27,39 +36,31 @@ def test_debug_skill_is_discoverable():
     )
 
 
-def test_debug_skill_context_is_fork():
+def test_debug_skill_context_is_fork(debug_skill):
     """metadata.context must be 'fork'."""
-    skills = discover_skills(BUNDLE_SKILLS_DIR)
-    skill = skills["debug"]
-    assert skill.context == "fork", (
-        f"Expected context='fork', got context={skill.context!r}"
+    assert debug_skill.context == "fork", (
+        f"Expected context='fork', got context={debug_skill.context!r}"
     )
 
 
-def test_debug_skill_disable_model_invocation_is_true():
+def test_debug_skill_disable_model_invocation_is_true(debug_skill):
     """metadata.disable_model_invocation must be True."""
-    skills = discover_skills(BUNDLE_SKILLS_DIR)
-    skill = skills["debug"]
-    assert skill.disable_model_invocation is True, (
-        f"Expected disable_model_invocation=True, got {skill.disable_model_invocation!r}"
+    assert debug_skill.disable_model_invocation is True, (
+        f"Expected disable_model_invocation=True, got {debug_skill.disable_model_invocation!r}"
     )
 
 
-def test_debug_skill_model_role_is_general():
+def test_debug_skill_model_role_is_general(debug_skill):
     """metadata.model_role must be 'general'."""
-    skills = discover_skills(BUNDLE_SKILLS_DIR)
-    skill = skills["debug"]
-    assert skill.model_role == "general", (
-        f"Expected model_role='general', got model_role={skill.model_role!r}"
+    assert debug_skill.model_role == "general", (
+        f"Expected model_role='general', got model_role={debug_skill.model_role!r}"
     )
 
 
-def test_debug_skill_user_invocable_is_true():
+def test_debug_skill_user_invocable_is_true(debug_skill):
     """metadata.user_invocable must be True."""
-    skills = discover_skills(BUNDLE_SKILLS_DIR)
-    skill = skills["debug"]
-    assert skill.user_invocable is True, (
-        f"Expected user_invocable=True, got user_invocable={skill.user_invocable!r}"
+    assert debug_skill.user_invocable is True, (
+        f"Expected user_invocable=True, got user_invocable={debug_skill.user_invocable!r}"
     )
 
 
@@ -72,13 +73,11 @@ def test_debug_skill_body_contains_arguments_placeholder():
     )
 
 
-def test_debug_skill_description_mentions_diagnostics():
+def test_debug_skill_description_mentions_diagnostics(debug_skill):
     """Skill description must reference diagnostics / troubleshoot."""
-    skills = discover_skills(BUNDLE_SKILLS_DIR)
-    skill = skills["debug"]
-    desc_lower = skill.description.lower()
+    desc_lower = debug_skill.description.lower()
     assert "diagnostic" in desc_lower or "troubleshoot" in desc_lower, (
-        f"Description does not mention diagnostics or troubleshoot: {skill.description!r}"
+        f"Description does not mention diagnostics or troubleshoot: {debug_skill.description!r}"
     )
 
 
