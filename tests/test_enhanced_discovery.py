@@ -500,6 +500,9 @@ class MockCoordinatorWithSpawn(MockCoordinator):
 
     def __init__(self, spawn_fn=None):
         super().__init__()
+        self.session = None  # Matches coordinator.session (parent session)
+        self.session_id = "test-parent-session"
+        self.config = {"agents": {}}  # Matches coordinator.config["agents"]
         if spawn_fn is not None:
             self.capabilities["session.spawn"] = spawn_fn
 

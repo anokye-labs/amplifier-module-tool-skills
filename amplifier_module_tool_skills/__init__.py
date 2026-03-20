@@ -681,10 +681,10 @@ Skill Discovery:
                     if resolved:
                         provider_preferences = resolved
 
-            # 4. Get spawn function and related context from coordinator capabilities
+            # 4. Get spawn function and related context (matching delegate tool pattern)
             spawn_fn = self.coordinator.get_capability("session.spawn")
-            parent_session = self.coordinator.get_capability("session.current")
-            agent_configs = self.coordinator.get_capability("agent_configs")
+            parent_session = self.coordinator.session
+            agent_configs = self.coordinator.config.get("agents", {})
             sub_session_id = None
             session_metadata = {"skill_name": skill_name, "context": "fork"}
 
