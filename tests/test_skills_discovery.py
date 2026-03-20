@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+import pytest
 
 from amplifier_module_tool_skills import SkillsDiscovery
 from amplifier_module_tool_skills.discovery import SkillMetadata
@@ -131,3 +132,109 @@ class TestSkillsDiscoveryGetShortcuts:
         discovery = SkillsDiscovery(skills)
         result = discovery.get_shortcuts()
         assert result == {}
+
+
+class MockHooks:
+    """Minimal mock hooks system for testing."""
+
+    def __init__(self):
+        self.emitted_events = []
+        self.registered_hooks = []
+
+    def register(self, event: str, handler, priority: int = 10, name: str = None):
+        """Register a hook handler."""
+        self.registered_hooks.append({"event": event, "handler": handler})
+        return lambda: None  # Return unregister callable
+
+    async def emit(self, event_name: str, data):
+        """Emit an event."""
+        self.emitted_events.append((event_name, data))
+
+
+class MockCoordinator:
+    """Minimal mock coordinator for testing register_capability."""
+
+    def __init__(self):
+        self.capabilities: dict = {}
+        self.hooks = MockHooks()
+        self.config = {}
+
+    def register_capability(self, name: str, value) -> None:
+        """Register a capability."""
+        self.capabilities[name] = value
+
+    def get_capability(self, name: str):
+        """Get a capability."""
+        return self.capabilities.get(name)
+
+    def get(self, name: str):
+        """Get a component."""
+        return None
+
+    async def mount(self, category: str, tool, name: str):
+        """Mount a tool."""
+
+
+class TestSkillsDiscoveryRegistration:
+    """Tests that mount() registers SkillsDiscovery as a coordinator capability."""
+
+    @pytest.mark.asyncio
+    async def test_mount_registers_skills_discovery_capability(self, tmp_path):
+        """mount() calls coordinator.register_capability('skills_discovery', ...)."""
+        from amplifier_module_tool_skills import mount
+
+        coordinator = MockCoordinator()
+        config = {"skills_dir": str(tmp_path)}
+
+        await mount(coordinator, config)
+
+        # Verify register_capability was called with 'skills_discovery'
+        assert "skills_discovery" in coordinator.capabilities, (
+            "mount() must call coordinator.register_capability('skills_discovery', ...)"
+        )
+
+    @pytest.mark.asyncio
+    async def test_registered_skills_discovery_has_list_skills_method(self, tmp_path):
+        """Registered SkillsDiscovery object has list_skills method."""
+        from amplifier_module_tool_skills import mount
+
+        coordinator = MockCoordinator()
+        config = {"skills_dir": str(tmp_path)}
+
+        await mount(coordinator, config)
+
+        sd = coordinator.capabilities.get("skills_discovery")
+        assert sd is not None
+        assert hasattr(sd, "list_skills"), (
+            "SkillsDiscovery must have list_skills method"
+        )
+
+    @pytest.mark.asyncio
+    async def test_registered_skills_discovery_has_find_method(self, tmp_path):
+        """Registered SkillsDiscovery object has find method."""
+        from amplifier_module_tool_skills import mount
+
+        coordinator = MockCoordinator()
+        config = {"skills_dir": str(tmp_path)}
+
+        await mount(coordinator, config)
+
+        sd = coordinator.capabilities.get("skills_discovery")
+        assert sd is not None
+        assert hasattr(sd, "find"), "SkillsDiscovery must have find method"
+
+    @pytest.mark.asyncio
+    async def test_registered_skills_discovery_has_get_shortcuts_method(self, tmp_path):
+        """Registered SkillsDiscovery object has get_shortcuts method."""
+        from amplifier_module_tool_skills import mount
+
+        coordinator = MockCoordinator()
+        config = {"skills_dir": str(tmp_path)}
+
+        await mount(coordinator, config)
+
+        sd = coordinator.capabilities.get("skills_discovery")
+        assert sd is not None
+        assert hasattr(sd, "get_shortcuts"), (
+            "SkillsDiscovery must have get_shortcuts method"
+        )

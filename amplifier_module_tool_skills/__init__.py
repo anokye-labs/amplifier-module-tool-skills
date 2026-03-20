@@ -169,11 +169,9 @@ async def mount(
 
         logger.info(f"Mounted skills visibility hook with {len(tool.skills)} skills")
 
-    # Write SkillsDiscovery to session_state (before discovery event emission)
-    session_state = getattr(coordinator, "session_state", None)
-    if session_state is not None:
-        session_state["skills_discovery"] = SkillsDiscovery(tool.skills)
-        logger.debug("Wrote SkillsDiscovery to coordinator.session_state")
+    # Register SkillsDiscovery as a kernel capability (before discovery event emission)
+    coordinator.register_capability("skills_discovery", SkillsDiscovery(tool.skills))
+    logger.debug("Registered SkillsDiscovery via register_capability")
 
     # Emit discovery event
     await coordinator.hooks.emit(
@@ -215,10 +213,10 @@ async def mount(
 
 
 class SkillsDiscovery:
-    """Provides discovery interface for skills in session state.
+    """Provides discovery interface for skills.
 
     Wraps the skills dict and provides list, find, and shortcut methods.
-    Follows the same pattern as ModeDiscovery written to session_state.
+    Registered as a capability via coordinator.register_capability().
     """
 
     def __init__(self, skills: dict[str, SkillMetadata]):
