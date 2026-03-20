@@ -1,5 +1,7 @@
 """Tests for the /batch power skill in amplifier-bundle-skills."""
 
+import pytest
+
 from pathlib import Path
 
 from amplifier_module_tool_skills.discovery import discover_skills, extract_skill_body
@@ -12,6 +14,13 @@ BUNDLE_SKILLS_DIR = (
 )
 
 BATCH_SKILL_PATH = BUNDLE_SKILLS_DIR / "batch" / "SKILL.md"
+
+
+@pytest.fixture(scope="module")
+def batch_skill():
+    """Load and return the batch skill once per module, avoiding redundant discover_skills() calls."""
+    skills = discover_skills(BUNDLE_SKILLS_DIR)
+    return skills.get("batch")
 
 
 def test_batch_skill_file_exists():
@@ -27,39 +36,31 @@ def test_batch_skill_is_discoverable():
     )
 
 
-def test_batch_skill_context_is_fork():
+def test_batch_skill_context_is_fork(batch_skill):
     """metadata.context must be 'fork'."""
-    skills = discover_skills(BUNDLE_SKILLS_DIR)
-    skill = skills["batch"]
-    assert skill.context == "fork", (
-        f"Expected context='fork', got context={skill.context!r}"
+    assert batch_skill.context == "fork", (
+        f"Expected context='fork', got context={batch_skill.context!r}"
     )
 
 
-def test_batch_skill_disable_model_invocation_is_true():
+def test_batch_skill_disable_model_invocation_is_true(batch_skill):
     """metadata.disable_model_invocation must be True."""
-    skills = discover_skills(BUNDLE_SKILLS_DIR)
-    skill = skills["batch"]
-    assert skill.disable_model_invocation is True, (
-        f"Expected disable_model_invocation=True, got {skill.disable_model_invocation!r}"
+    assert batch_skill.disable_model_invocation is True, (
+        f"Expected disable_model_invocation=True, got {batch_skill.disable_model_invocation!r}"
     )
 
 
-def test_batch_skill_model_role_is_reasoning():
+def test_batch_skill_model_role_is_reasoning(batch_skill):
     """metadata.model_role must be 'reasoning'."""
-    skills = discover_skills(BUNDLE_SKILLS_DIR)
-    skill = skills["batch"]
-    assert skill.model_role == "reasoning", (
-        f"Expected model_role='reasoning', got model_role={skill.model_role!r}"
+    assert batch_skill.model_role == "reasoning", (
+        f"Expected model_role='reasoning', got model_role={batch_skill.model_role!r}"
     )
 
 
-def test_batch_skill_user_invocable_is_true():
+def test_batch_skill_user_invocable_is_true(batch_skill):
     """metadata.user_invocable must be True."""
-    skills = discover_skills(BUNDLE_SKILLS_DIR)
-    skill = skills["batch"]
-    assert skill.user_invocable is True, (
-        f"Expected user_invocable=True, got user_invocable={skill.user_invocable!r}"
+    assert batch_skill.user_invocable is True, (
+        f"Expected user_invocable=True, got user_invocable={batch_skill.user_invocable!r}"
     )
 
 
@@ -72,13 +73,11 @@ def test_batch_skill_body_contains_arguments_placeholder():
     )
 
 
-def test_batch_skill_description_mentions_parallel():
+def test_batch_skill_description_mentions_parallel(batch_skill):
     """Skill description must reference parallel execution / work units."""
-    skills = discover_skills(BUNDLE_SKILLS_DIR)
-    skill = skills["batch"]
-    desc_lower = skill.description.lower()
+    desc_lower = batch_skill.description.lower()
     assert "parallel" in desc_lower or "work unit" in desc_lower, (
-        f"Description does not mention parallel execution or work units: {skill.description!r}"
+        f"Description does not mention parallel execution or work units: {batch_skill.description!r}"
     )
 
 
