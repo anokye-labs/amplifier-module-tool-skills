@@ -55,6 +55,9 @@ class SkillsVisibilityHook:
 
         skills_text = self._format_skills_list()
 
+        if not skills_text:
+            return HookResult(action="continue")
+
         return HookResult(
             action="inject_context",
             context_injection=skills_text,
@@ -72,8 +75,18 @@ class SkillsVisibilityHook:
         if not self.skills:
             return ""
 
-        # Sort and limit
-        skills_items = sorted(self.skills.items())[: self.max_visible]
+        # Filter out skills with disable_model_invocation=True
+        visible_skills = {
+            name: meta
+            for name, meta in self.skills.items()
+            if not getattr(meta, "disable_model_invocation", False)
+        }
+
+        if not visible_skills:
+            return ""
+
+        # Sort and limit using filtered visible_skills
+        skills_items = sorted(visible_skills.items())[: self.max_visible]
 
         lines = ["Available skills (use load_skill tool):"]
         lines.append("")
@@ -81,9 +94,9 @@ class SkillsVisibilityHook:
         for name, metadata in skills_items:
             lines.append(f"- **{name}**: {metadata.description}")
 
-        # Show truncation if applicable
-        if len(self.skills) > self.max_visible:
-            remaining = len(self.skills) - self.max_visible
+        # Show truncation if applicable (based on filtered visible_skills count)
+        if len(visible_skills) > self.max_visible:
+            remaining = len(visible_skills) - self.max_visible
             lines.append("")
             lines.append(f"_({remaining} more - use load_skill(list=true) to see all)_")
 
