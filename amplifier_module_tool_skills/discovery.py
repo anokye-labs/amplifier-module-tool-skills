@@ -45,6 +45,14 @@ class SkillMetadata:
     allowed_tools: list[str] | None = None
     metadata: dict[str, Any] | None = None
     hooks: dict[str, Any] | None = None  # Claude Code-compatible hooks config
+    # Enhanced frontmatter fields (Amplifier extended format)
+    context: str | None = None  # Execution context (e.g., 'fork')
+    agent: str | None = None  # Agent to use (e.g., 'foundation:explorer')
+    disable_model_invocation: bool = False  # Prevent LLM calls when loading
+    user_invocable: bool = True  # Whether users can invoke this skill directly
+    model: str | None = None  # Preferred model for this skill
+    model_role: str | list[str] | None = None  # Model role or fallback chain
+    provider_preferences: list[dict] | None = None  # Provider/model preferences
 
 
 def parse_skill_frontmatter(skill_path: Path) -> dict[str, Any] | None:
@@ -215,6 +223,73 @@ def discover_skills(skills_dir: Path) -> dict[str, SkillMetadata]:
                 )
                 hooks_config = None
 
+            # Parse enhanced frontmatter fields (supports hyphen-case and snake_case)
+            # context: only 'fork' is currently supported
+            context_val = frontmatter.get("context")
+            if context_val is not None:
+                if context_val != "fork":
+                    logger.warning(
+                        f"Invalid context value '{context_val}' in {skill_file}. "
+                        f"Only 'fork' is supported. Ignoring context field."
+                    )
+                    context_val = None
+
+            agent_val = frontmatter.get("agent")
+
+            # disable-model-invocation supports both hyphen and snake_case
+            disable_model_invocation_val = frontmatter.get(
+                "disable-model-invocation",
+                frontmatter.get("disable_model_invocation", False),
+            )
+            if not isinstance(disable_model_invocation_val, bool):
+                disable_model_invocation_val = bool(disable_model_invocation_val)
+
+            # user-invocable supports both hyphen and snake_case
+            user_invocable_val = frontmatter.get(
+                "user-invocable",
+                frontmatter.get("user_invocable", True),
+            )
+            if not isinstance(user_invocable_val, bool):
+                user_invocable_val = bool(user_invocable_val)
+
+            model_val = frontmatter.get("model")
+
+            # model_role supports both string and list (fallback chain)
+            model_role_val = frontmatter.get("model_role") or frontmatter.get(
+                "model-role"
+            )
+            if model_role_val is not None:
+                if not isinstance(model_role_val, (str, list)):
+                    logger.warning(
+                        f"Invalid model_role format in {skill_file}: "
+                        f"expected str or list, got {type(model_role_val)}. Ignoring."
+                    )
+                    model_role_val = None
+
+            # provider_preferences must be a list of dicts
+            provider_preferences_val = frontmatter.get(
+                "provider_preferences"
+            ) or frontmatter.get("provider-preferences")
+            if provider_preferences_val is not None:
+                if not isinstance(provider_preferences_val, list):
+                    logger.warning(
+                        f"Invalid provider_preferences format in {skill_file}: "
+                        f"expected list, got {type(provider_preferences_val)}. Ignoring."
+                    )
+                    provider_preferences_val = None
+                else:
+                    # Validate each entry is a dict
+                    valid_prefs = []
+                    for pref in provider_preferences_val:
+                        if isinstance(pref, dict):
+                            valid_prefs.append(pref)
+                        else:
+                            logger.warning(
+                                f"Invalid provider_preferences entry in {skill_file}: "
+                                f"expected dict, got {type(pref)}. Skipping entry."
+                            )
+                    provider_preferences_val = valid_prefs if valid_prefs else None
+
             # Create metadata
             metadata = SkillMetadata(
                 name=name,
@@ -227,6 +302,13 @@ def discover_skills(skills_dir: Path) -> dict[str, SkillMetadata]:
                 allowed_tools=allowed_tools,
                 metadata=frontmatter.get("metadata"),
                 hooks=hooks_config,
+                context=context_val,
+                agent=agent_val,
+                disable_model_invocation=disable_model_invocation_val,
+                user_invocable=user_invocable_val,
+                model=model_val,
+                model_role=model_role_val,
+                provider_preferences=provider_preferences_val,
             )
 
             skills[name] = metadata
