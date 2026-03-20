@@ -656,7 +656,12 @@ Skill Discovery:
             sub_session_id = None
             session_metadata = {"skill_name": skill_name, "context": "fork"}
 
-            # 5. Call spawn_fn with assembled arguments
+            # 5. Build tool_inheritance from metadata.allowed_tools
+            tool_inheritance: dict[str, Any] = {}
+            if metadata.allowed_tools:
+                tool_inheritance["allowed_tools"] = metadata.allowed_tools
+
+            # 6. Call spawn_fn with assembled arguments
             result = await spawn_fn(
                 agent_name=f"skill:{skill_name}",
                 instruction=processed_body,
@@ -665,6 +670,7 @@ Skill Discovery:
                 sub_session_id=sub_session_id,
                 provider_preferences=provider_preferences,
                 session_metadata=session_metadata,
+                tool_inheritance=tool_inheritance,
             )
 
             # 6. Return ToolResult with delegate output fields

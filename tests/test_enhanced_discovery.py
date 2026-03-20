@@ -920,3 +920,140 @@ Body content
     ]
     skill_names = [e[1]["skill_name"] for e in events]
     assert "default-skill" in skill_names
+
+
+# ---------------------------------------------------------------------------
+# Tests for allowed-tools enforcement in _execute_fork() (task-10)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_fork_skill_with_allowed_tools_passes_tool_inheritance(
+    tmp_path: Path,
+):
+    """Fork skill with allowed-tools passes tool_inheritance to spawn_fn."""
+    from amplifier_module_tool_skills import SkillsTool
+
+    skill_dir = tmp_path / "allowed-tools-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        """---
+name: allowed-tools-skill
+description: Fork skill with allowed-tools
+context: fork
+allowed-tools:
+  - bash
+  - read_file
+  - grep
+---
+Body content.
+"""
+    )
+
+    spawn_calls = []
+
+    async def mock_spawn_fn(**kwargs):
+        spawn_calls.append(kwargs)
+        return {
+            "response": "Result",
+            "session_id": "sess-at",
+            "turn_count": 1,
+            "status": "completed",
+        }
+
+    coordinator = MockCoordinatorWithSpawn(spawn_fn=mock_spawn_fn)
+    tool = SkillsTool({}, coordinator, resolved_dirs=[tmp_path])  # type: ignore[arg-type]
+    result = await tool._load_skill("allowed-tools-skill")
+
+    assert result.success is True
+    assert len(spawn_calls) == 1
+    # tool_inheritance must be passed
+    assert "tool_inheritance" in spawn_calls[0]
+    # tool_inheritance must contain allowed_tools key with the list
+    tool_inheritance = spawn_calls[0]["tool_inheritance"]
+    assert "allowed_tools" in tool_inheritance
+    assert tool_inheritance["allowed_tools"] == ["bash", "read_file", "grep"]
+
+
+@pytest.mark.asyncio
+async def test_fork_skill_tool_inheritance_exact_allowed_tools_list(
+    tmp_path: Path,
+):
+    """spawn_fn receives tool_inheritance={'allowed_tools': ['bash', 'read_file', 'grep']}."""
+    from amplifier_module_tool_skills import SkillsTool
+
+    skill_dir = tmp_path / "exact-tools-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        """---
+name: exact-tools-skill
+description: Fork skill to verify exact tool_inheritance value
+context: fork
+allowed-tools:
+  - bash
+  - read_file
+  - grep
+---
+Body content.
+"""
+    )
+
+    spawn_calls = []
+
+    async def mock_spawn_fn(**kwargs):
+        spawn_calls.append(kwargs)
+        return {
+            "response": "Result",
+            "session_id": "sess-exact",
+            "turn_count": 1,
+            "status": "completed",
+        }
+
+    coordinator = MockCoordinatorWithSpawn(spawn_fn=mock_spawn_fn)
+    tool = SkillsTool({}, coordinator, resolved_dirs=[tmp_path])  # type: ignore[arg-type]
+    await tool._load_skill("exact-tools-skill")
+
+    assert len(spawn_calls) == 1
+    assert spawn_calls[0]["tool_inheritance"] == {
+        "allowed_tools": ["bash", "read_file", "grep"]
+    }
+
+
+@pytest.mark.asyncio
+async def test_fork_skill_without_allowed_tools_passes_empty_tool_inheritance(
+    tmp_path: Path,
+):
+    """Fork skill without allowed-tools passes empty tool_inheritance dict to spawn_fn."""
+    from amplifier_module_tool_skills import SkillsTool
+
+    skill_dir = tmp_path / "no-tools-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        """---
+name: no-tools-skill
+description: Fork skill without allowed-tools
+context: fork
+---
+Body content.
+"""
+    )
+
+    spawn_calls = []
+
+    async def mock_spawn_fn(**kwargs):
+        spawn_calls.append(kwargs)
+        return {
+            "response": "Result",
+            "session_id": "sess-no-tools",
+            "turn_count": 1,
+            "status": "completed",
+        }
+
+    coordinator = MockCoordinatorWithSpawn(spawn_fn=mock_spawn_fn)
+    tool = SkillsTool({}, coordinator, resolved_dirs=[tmp_path])  # type: ignore[arg-type]
+    await tool._load_skill("no-tools-skill")
+
+    assert len(spawn_calls) == 1
+    # tool_inheritance must be passed but empty
+    assert "tool_inheritance" in spawn_calls[0]
+    assert spawn_calls[0]["tool_inheritance"] == {}
