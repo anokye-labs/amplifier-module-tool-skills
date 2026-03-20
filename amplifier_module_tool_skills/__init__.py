@@ -556,7 +556,7 @@ Skill Discovery:
 
         if metadata.context != "fork":
             body = await preprocess(
-                body, skill_dir=metadata.path.parent, arguments=None
+                body, skill_dir=metadata.path.parent, arguments=None, execute_shell=False
             )
 
         logger.info(f"Loaded skill: {skill_name}")

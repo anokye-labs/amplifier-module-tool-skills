@@ -116,3 +116,14 @@ async def test_normal_backticks_not_affected(tmp_path):
     body = "Use `some_function()` in your code."
     result = await preprocess(body, skill_dir=tmp_path, arguments=None)
     assert result == "Use `some_function()` in your code."
+
+
+@pytest.mark.asyncio
+async def test_execute_shell_false_skips_shell_commands(tmp_path):
+    """execute_shell=False prevents !`command` execution but keeps ${SKILL_DIR} substitution."""
+    body = "Dir: ${SKILL_DIR}, Command: !`echo hello`"
+    result = await preprocess(body, skill_dir=tmp_path, arguments=None, execute_shell=False)
+    # Shell command NOT executed — pattern preserved as-is
+    assert "!`echo hello`" in result
+    # Variable substitution still happens
+    assert str(tmp_path) in result

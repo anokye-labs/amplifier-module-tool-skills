@@ -131,21 +131,26 @@ async def preprocess(
     *,
     skill_dir: Path,
     arguments: str | None,
+    execute_shell: bool = True,
 ) -> str:
     """Preprocess skill body content through the full pipeline.
 
     Pipeline order:
     1. String substitution (${SKILL_DIR}, $ARGUMENTS, $N positional)
-    2. Shell command execution (!`command` patterns)
+    2. Shell command execution (!`command` patterns) — only when execute_shell=True
 
     Args:
         body: Raw skill body text.
         skill_dir: Path to the skill directory.
         arguments: Full argument string from the user, or None.
+        execute_shell: If False, skip shell command execution (!`command` patterns).
+            Default is True. Set to False for inline skills to prevent untrusted
+            shell execution.
 
     Returns:
         Preprocessed body text ready for delivery.
     """
     body = _substitute_variables(body, skill_dir, arguments)
-    body = await _execute_shell_commands(body, skill_dir)
+    if execute_shell:
+        body = await _execute_shell_commands(body, skill_dir)
     return body
