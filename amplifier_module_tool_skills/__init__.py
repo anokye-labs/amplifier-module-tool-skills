@@ -138,7 +138,6 @@ async def mount(
             "skills:discovered",  # When skills are found during mount
             "skill:loaded",  # When skill loaded successfully (includes hooks config)
             "skill:unloaded",  # When skill is unloaded (for hook cleanup)
-            "skill:command_registered",  # When a skill is registered as a slash command
         ]
     )
     coordinator.register_capability("observability.events", obs_events)
@@ -185,37 +184,6 @@ async def mount(
             "sources": [str(d) for d in tool.skills_dirs],
         },
     )
-
-    # Register skills.user_invocable capability (primary mechanism for slash-command integration)
-    # This replaces the hook-based messaging bus pattern with a direct capability registration.
-    user_invocable_skills = {
-        skill_name: {
-            "description": skill_meta.description,
-            "disable_model_invocation": skill_meta.disable_model_invocation,
-            "context": skill_meta.context,
-        }
-        for skill_name, skill_meta in tool.skills.items()
-        if skill_meta.user_invocable
-    }
-    if user_invocable_skills:
-        coordinator.register_capability("skills.user_invocable", user_invocable_skills)
-        logger.info(
-            f"Registered skills.user_invocable capability with {len(user_invocable_skills)} skills"
-        )
-
-    # Emit skill:command_registered for each user-invocable skill (kept for backward compatibility)
-    for skill_name, skill_meta in tool.skills.items():
-        if skill_meta.user_invocable:
-            await coordinator.hooks.emit(
-                "skill:command_registered",
-                {
-                    "skill_name": skill_name,
-                    "description": skill_meta.description,
-                    "disable_model_invocation": skill_meta.disable_model_invocation,
-                    "context": skill_meta.context,
-                },
-            )
-            logger.debug(f"Emitted skill:command_registered for {skill_name}")
 
     # Return cleanup function that emits skill:unloaded for each loaded skill
     async def cleanup() -> None:

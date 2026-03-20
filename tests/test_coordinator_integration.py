@@ -296,3 +296,64 @@ description: Test skill {i}
     assert data["skill_count"] == 3
     assert len(data["skill_names"]) == 3
     assert all(f"skill-{i}" in data["skill_names"] for i in range(3))
+
+
+@pytest.mark.asyncio
+async def test_no_skill_command_registered_in_obs_events():
+    """Test that skill:command_registered is NOT in observable events (wrong pattern removed)."""
+    coordinator = MockCoordinator()
+    
+    await mount(coordinator, {})
+    
+    obs_events = coordinator.get_capability("observability.events")
+    assert obs_events is not None
+    # skill:command_registered is a wrong pattern and must not be registered
+    assert "skill:command_registered" not in obs_events
+
+
+@pytest.mark.asyncio
+async def test_no_user_invocable_capability_registered(tmp_path):
+    """Test that skills.user_invocable capability is NOT registered (wrong pattern removed)."""
+    coordinator = MockCoordinator()
+    
+    # Create a user_invocable skill
+    skill_dir = tmp_path / "my-command"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text("""---
+name: my-command
+description: A user invocable skill
+user_invocable: true
+---
+# My Command""")
+    
+    config = {"skills_dir": str(tmp_path)}
+    await mount(coordinator, config)
+    
+    # skills.user_invocable is a wrong capability pattern and must NOT be registered
+    assert coordinator.get_capability("skills.user_invocable") is None
+
+
+@pytest.mark.asyncio
+async def test_no_skill_command_registered_events_emitted(tmp_path):
+    """Test that skill:command_registered events are NOT emitted (wrong pattern removed)."""
+    coordinator = MockCoordinator()
+    
+    # Create a user_invocable skill
+    skill_dir = tmp_path / "my-command"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text("""---
+name: my-command
+description: A user invocable skill
+user_invocable: true
+---
+# My Command""")
+    
+    config = {"skills_dir": str(tmp_path)}
+    await mount(coordinator, config)
+    
+    # skill:command_registered should never be emitted
+    command_registered_events = [
+        e for e in coordinator.hooks.emitted_events
+        if e[0] == "skill:command_registered"
+    ]
+    assert len(command_registered_events) == 0
