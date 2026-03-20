@@ -1020,6 +1020,65 @@ Body content.
     }
 
 
+# ---------------------------------------------------------------------------
+# Tests for skills.user_invocable capability registration (acceptance criteria task-13)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_mount_registers_user_invocable_capability(tmp_path: Path):
+    """mount() registers skills.user_invocable capability with user-invocable skills only."""
+    from amplifier_module_tool_skills import mount as skills_mount
+
+    # Create cmd-skill: user-invocable with fork context and disable-model-invocation
+    cmd_skill_dir = tmp_path / "cmd-skill"
+    cmd_skill_dir.mkdir()
+    (cmd_skill_dir / "SKILL.md").write_text(
+        """---
+name: cmd-skill
+description: A command skill for users
+context: fork
+disable-model-invocation: true
+user-invocable: true
+---
+Command skill body
+"""
+    )
+
+    # Create lib-skill: default (not user-invocable)
+    lib_skill_dir = tmp_path / "lib-skill"
+    lib_skill_dir.mkdir()
+    (lib_skill_dir / "SKILL.md").write_text(
+        """---
+name: lib-skill
+description: A library skill for model use only
+---
+Library skill body
+"""
+    )
+
+    coordinator = MockCoordinator()
+    await skills_mount(coordinator, {"skills_dirs": [str(tmp_path)]})
+
+    # Capability should be registered
+    capability = coordinator.get_capability("skills.user_invocable")
+    assert capability is not None, (
+        "skills.user_invocable capability should be registered"
+    )
+
+    # cmd-skill should be in capability with correct metadata
+    assert "cmd-skill" in capability, "cmd-skill should be in user_invocable capability"
+    cmd_entry = capability["cmd-skill"]
+    assert cmd_entry["description"] == "A command skill for users"
+    assert cmd_entry["disable_model_invocation"] is True
+    assert cmd_entry["context"] == "fork"
+
+    # lib-skill should NOT be in capability
+    assert "lib-skill" not in capability, (
+        "lib-skill should not be in user_invocable capability"
+    )
+
+
 @pytest.mark.asyncio
 async def test_fork_skill_without_allowed_tools_passes_empty_tool_inheritance(
     tmp_path: Path,

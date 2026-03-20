@@ -179,7 +179,24 @@ async def mount(
         },
     )
 
-    # Emit skill:command_registered for each user-invocable skill
+    # Register skills.user_invocable capability (primary mechanism for slash-command integration)
+    # This replaces the hook-based messaging bus pattern with a direct capability registration.
+    user_invocable_skills = {
+        skill_name: {
+            "description": skill_meta.description,
+            "disable_model_invocation": skill_meta.disable_model_invocation,
+            "context": skill_meta.context,
+        }
+        for skill_name, skill_meta in tool.skills.items()
+        if skill_meta.user_invocable
+    }
+    if user_invocable_skills:
+        coordinator.register_capability("skills.user_invocable", user_invocable_skills)
+        logger.info(
+            f"Registered skills.user_invocable capability with {len(user_invocable_skills)} skills"
+        )
+
+    # Emit skill:command_registered for each user-invocable skill (kept for backward compatibility)
     for skill_name, skill_meta in tool.skills.items():
         if skill_meta.user_invocable:
             await coordinator.hooks.emit(
