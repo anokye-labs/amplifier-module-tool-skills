@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 from amplifier_core import ToolResult
 
+from amplifier_module_tool_skills.discovery import SkillMetadata
 from amplifier_module_tool_skills.discovery import discover_skills
 from amplifier_module_tool_skills.discovery import discover_skills_multi_source
 from amplifier_module_tool_skills.discovery import extract_skill_body
@@ -169,6 +170,12 @@ async def mount(
 
         logger.info(f"Mounted skills visibility hook with {len(tool.skills)} skills")
 
+    # Write SkillsDiscovery to session_state (before discovery event emission)
+    session_state = getattr(coordinator, "session_state", None)
+    if session_state is not None:
+        session_state["skills_discovery"] = SkillsDiscovery(tool.skills)
+        logger.debug("Wrote SkillsDiscovery to coordinator.session_state")
+
     # Emit discovery event
     await coordinator.hooks.emit(
         "skills:discovered",
@@ -237,6 +244,61 @@ async def mount(
                 )
 
     return cleanup
+
+
+class SkillsDiscovery:
+    """Provides discovery interface for skills in session state.
+
+    Wraps the skills dict and provides list, find, and shortcut methods.
+    Follows the same pattern as ModeDiscovery written to session_state.
+    """
+
+    def __init__(self, skills: dict[str, SkillMetadata]):
+        """Initialize with skills dict.
+
+        Args:
+            skills: Dict mapping skill names to SkillMetadata.
+        """
+        self._skills = skills
+
+    def list_skills(self) -> list[tuple[str, str]]:
+        """Return (name, description) pairs sorted alphabetically.
+
+        Returns:
+            List of (name, description) tuples sorted by name.
+        """
+        return [
+            (name, metadata.description)
+            for name, metadata in sorted(self._skills.items())
+        ]
+
+    def find(self, name: str) -> SkillMetadata | None:
+        """Find a skill by name.
+
+        Args:
+            name: Skill name to look up.
+
+        Returns:
+            SkillMetadata if found, None otherwise.
+        """
+        return self._skills.get(name)
+
+    def get_shortcuts(self) -> list[dict[str, Any]]:
+        """Return only user_invocable skills as CLI shortcut dicts.
+
+        Returns:
+            List of dicts with 'action', 'description', 'context' keys,
+            one per user_invocable skill.
+        """
+        return [
+            {
+                "action": name,
+                "description": metadata.description,
+                "context": metadata.context,
+            }
+            for name, metadata in self._skills.items()
+            if metadata.user_invocable
+        ]
 
 
 class SkillsTool:
