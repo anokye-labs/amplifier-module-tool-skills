@@ -12,6 +12,7 @@ import asyncio
 import logging
 import os
 import re
+import signal
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -133,13 +134,17 @@ async def _run_shell_command(command: str, cwd: Path) -> str:
             stderr=asyncio.subprocess.PIPE,
             cwd=cwd,
             env=_build_safe_env(),
+            start_new_session=True,
         )
         try:
             stdout_bytes, stderr_bytes = await asyncio.wait_for(
                 proc.communicate(), timeout=30.0
             )
         except asyncio.TimeoutError:
-            proc.kill()
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                proc.kill()
             await proc.communicate()
             logger.warning(f"Shell command timed out: {command!r}")
             return f"[preprocessing error: command timed out: {command}]"

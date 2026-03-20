@@ -1,6 +1,8 @@
 """Tests for preprocessing pipeline — string substitution and shell execution."""
 
+import asyncio
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -169,3 +171,28 @@ async def test_execute_shell_false_skips_shell_commands(tmp_path):
     assert "!`echo hello`" in result
     # Variable substitution still happens
     assert str(tmp_path) in result
+
+
+@pytest.mark.asyncio
+async def test_shell_timeout_kills_process_group(tmp_path):
+    """start_new_session=True is passed to create_subprocess_shell and timeout returns error."""
+    # Create a mock process
+    mock_proc = MagicMock()
+    mock_proc.pid = 12345
+    mock_proc.kill = MagicMock()
+    mock_proc.communicate = AsyncMock(return_value=(b"", b""))
+
+    mock_create = AsyncMock(return_value=mock_proc)
+
+    with patch("asyncio.create_subprocess_shell", mock_create):
+        with patch("asyncio.wait_for", AsyncMock(side_effect=asyncio.TimeoutError)):
+            result = await preprocess(
+                "!`sleep 100`", skill_dir=tmp_path, arguments=None
+            )
+
+    # Verify start_new_session=True was passed to create_subprocess_shell
+    call_kwargs = mock_create.call_args.kwargs
+    assert call_kwargs.get("start_new_session") is True
+
+    # Verify result contains 'timed out'
+    assert "timed out" in result
