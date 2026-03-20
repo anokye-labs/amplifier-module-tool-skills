@@ -772,3 +772,151 @@ Body content.
     assert result.success is False
     assert result.error is not None
     assert "Fork execution failed" in result.error["message"]
+
+
+# ---------------------------------------------------------------------------
+# Tests for skill:command_registered event emission (acceptance criteria task-9)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_mount_emits_skill_command_registered_for_user_invocable_skills(
+    tmp_path: Path,
+):
+    """mount() emits skill:command_registered for user_invocable=True skills."""
+    from amplifier_module_tool_skills import mount as skills_mount
+
+    skill_dir = tmp_path / "invocable-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        """---
+name: invocable-skill
+description: A user-invocable skill
+user-invocable: true
+---
+Body content
+"""
+    )
+
+    coordinator = MockCoordinator()
+    await skills_mount(coordinator, {"skills_dirs": [str(tmp_path)]})
+
+    events = [
+        e
+        for e in coordinator.hooks.emitted_events
+        if e[0] == "skill:command_registered"
+    ]
+    assert len(events) >= 1
+    skill_names = [e[1]["skill_name"] for e in events]
+    assert "invocable-skill" in skill_names
+
+
+@pytest.mark.asyncio
+async def test_mount_does_not_emit_skill_command_registered_for_non_user_invocable(
+    tmp_path: Path,
+):
+    """mount() does NOT emit skill:command_registered for user_invocable=False skills."""
+    from amplifier_module_tool_skills import mount as skills_mount
+
+    skill_dir = tmp_path / "non-invocable-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        """---
+name: non-invocable-skill
+description: A non-user-invocable skill
+user-invocable: false
+---
+Body content
+"""
+    )
+
+    coordinator = MockCoordinator()
+    await skills_mount(coordinator, {"skills_dirs": [str(tmp_path)]})
+
+    events = [
+        e
+        for e in coordinator.hooks.emitted_events
+        if e[0] == "skill:command_registered"
+    ]
+    skill_names = [e[1]["skill_name"] for e in events]
+    assert "non-invocable-skill" not in skill_names
+
+
+@pytest.mark.asyncio
+async def test_skill_command_registered_event_data_fields(tmp_path: Path):
+    """skill:command_registered event data includes required fields."""
+    from amplifier_module_tool_skills import mount as skills_mount
+
+    skill_dir = tmp_path / "event-data-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        """---
+name: event-data-skill
+description: Skill for event data test
+context: fork
+disable-model-invocation: true
+---
+Body content
+"""
+    )
+
+    coordinator = MockCoordinator()
+    await skills_mount(coordinator, {"skills_dirs": [str(tmp_path)]})
+
+    events = [
+        e
+        for e in coordinator.hooks.emitted_events
+        if e[0] == "skill:command_registered"
+    ]
+    assert len(events) == 1
+    event_data = events[0][1]
+    assert "skill_name" in event_data
+    assert event_data["skill_name"] == "event-data-skill"
+    assert "description" in event_data
+    assert event_data["description"] == "Skill for event data test"
+    assert "disable_model_invocation" in event_data
+    assert event_data["disable_model_invocation"] is True
+    assert "context" in event_data
+    assert event_data["context"] == "fork"
+
+
+@pytest.mark.asyncio
+async def test_skill_command_registered_in_obs_events(tmp_path: Path):
+    """skill:command_registered is registered in observability events."""
+    from amplifier_module_tool_skills import mount as skills_mount
+
+    coordinator = MockCoordinator()
+    await skills_mount(coordinator, {"skills_dirs": [str(tmp_path)]})
+
+    obs_events = coordinator.capabilities.get("observability.events", [])
+    assert "skill:command_registered" in obs_events
+
+
+@pytest.mark.asyncio
+async def test_mount_emits_skill_command_registered_default_user_invocable(
+    tmp_path: Path,
+):
+    """mount() emits skill:command_registered for skills with default user_invocable=True."""
+    from amplifier_module_tool_skills import mount as skills_mount
+
+    skill_dir = tmp_path / "default-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        """---
+name: default-skill
+description: Skill with default user_invocable (should be True)
+---
+Body content
+"""
+    )
+
+    coordinator = MockCoordinator()
+    await skills_mount(coordinator, {"skills_dirs": [str(tmp_path)]})
+
+    events = [
+        e
+        for e in coordinator.hooks.emitted_events
+        if e[0] == "skill:command_registered"
+    ]
+    skill_names = [e[1]["skill_name"] for e in events]
+    assert "default-skill" in skill_names
