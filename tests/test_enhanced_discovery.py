@@ -60,7 +60,7 @@ def test_skill_metadata_enhanced_fields_defaults():
     assert metadata.context is None
     assert metadata.agent is None
     assert metadata.disable_model_invocation is False
-    assert metadata.user_invocable is True
+    assert metadata.user_invocable is False
     assert metadata.model is None
     assert metadata.model_role is None
     assert metadata.provider_preferences is None
@@ -128,7 +128,7 @@ Body content
     assert skill.context is None
     assert skill.agent is None
     assert skill.disable_model_invocation is False
-    assert skill.user_invocable is True
+    assert skill.user_invocable is False
     assert skill.model is None
     assert skill.model_role is None
     assert skill.provider_preferences is None
@@ -855,6 +855,7 @@ name: event-data-skill
 description: Skill for event data test
 context: fork
 disable-model-invocation: true
+user-invocable: true
 ---
 Body content
 """
@@ -893,10 +894,10 @@ async def test_skill_command_registered_in_obs_events(tmp_path: Path):
 
 
 @pytest.mark.asyncio
-async def test_mount_emits_skill_command_registered_default_user_invocable(
+async def test_mount_does_not_emit_skill_command_registered_for_default_user_invocable(
     tmp_path: Path,
 ):
-    """mount() emits skill:command_registered for skills with default user_invocable=True."""
+    """mount() does NOT emit skill:command_registered for skills with default user_invocable=False."""
     from amplifier_module_tool_skills import mount as skills_mount
 
     skill_dir = tmp_path / "default-skill"
@@ -904,7 +905,7 @@ async def test_mount_emits_skill_command_registered_default_user_invocable(
     (skill_dir / "SKILL.md").write_text(
         """---
 name: default-skill
-description: Skill with default user_invocable (should be True)
+description: Skill with default user_invocable (should be False)
 ---
 Body content
 """
@@ -919,7 +920,7 @@ Body content
         if e[0] == "skill:command_registered"
     ]
     skill_names = [e[1]["skill_name"] for e in events]
-    assert "default-skill" in skill_names
+    assert "default-skill" not in skill_names
 
 
 # ---------------------------------------------------------------------------

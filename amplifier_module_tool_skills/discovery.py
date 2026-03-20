@@ -48,7 +48,7 @@ class SkillMetadata:
     context: str | None = None  # Execution context (e.g., 'fork')
     agent: str | None = None  # Agent to use (e.g., 'foundation:explorer')
     disable_model_invocation: bool = False  # Prevent LLM calls when loading
-    user_invocable: bool = True  # Whether users can invoke this skill directly
+    user_invocable: bool = False  # Whether users can invoke this skill directly
     model: str | None = None  # Preferred model for this skill
     model_role: str | list[str] | None = None  # Model role or fallback chain
     provider_preferences: list[dict] | None = None  # Provider/model preferences
@@ -248,7 +248,7 @@ def discover_skills(skills_dir: Path) -> dict[str, SkillMetadata]:
             # user-invocable supports both hyphen and snake_case
             user_invocable_val = frontmatter.get(
                 "user-invocable",
-                frontmatter.get("user_invocable", True),
+                frontmatter.get("user_invocable", False),
             )
             if not isinstance(user_invocable_val, bool):
                 user_invocable_val = bool(user_invocable_val)
