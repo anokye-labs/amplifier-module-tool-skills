@@ -375,3 +375,112 @@ Full skill body content
     assert event_data["user_invocable"] is False
     assert event_data["allowed_tools"] == ["bash", "write_file"]
     assert event_data["slash_command"] == "full-skill"
+
+
+# ---------------------------------------------------------------------------
+# Tests for preprocessing wiring in _load_skill() (acceptance criteria task-7)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_load_skill_substitutes_skill_dir(tmp_path: Path):
+    """${SKILL_DIR} is substituted in loaded inline skill content."""
+    from amplifier_module_tool_skills import SkillsTool
+
+    skill_dir = tmp_path / "dir-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        """---
+name: dir-skill
+description: Skill with SKILL_DIR placeholder
+---
+The skill lives at ${SKILL_DIR} and has companion files there.
+"""
+    )
+
+    tool = SkillsTool({}, None, resolved_dirs=[tmp_path])
+    result = await tool._load_skill("dir-skill")
+
+    assert result.success is True
+    content = result.output["content"]
+    # ${SKILL_DIR} should NOT appear in result
+    assert "${SKILL_DIR}" not in content
+    # Actual skill directory path should appear
+    assert str(skill_dir) in content
+
+
+@pytest.mark.asyncio
+async def test_load_skill_skill_dir_placeholder_replaced_with_actual_path(
+    tmp_path: Path,
+):
+    """The actual skill directory path appears in result content."""
+    from amplifier_module_tool_skills import SkillsTool
+
+    skill_dir = tmp_path / "path-skill"
+    skill_dir.mkdir()
+    expected_path = str(skill_dir)
+    (skill_dir / "SKILL.md").write_text(
+        """---
+name: path-skill
+description: Skill to verify path replacement
+---
+Reference: ${SKILL_DIR}/examples/code.py
+"""
+    )
+
+    tool = SkillsTool({}, None, resolved_dirs=[tmp_path])
+    result = await tool._load_skill("path-skill")
+
+    assert result.success is True
+    content = result.output["content"]
+    assert f"{expected_path}/examples/code.py" in content
+
+
+@pytest.mark.asyncio
+async def test_load_skill_fork_skill_not_preprocessed(tmp_path: Path):
+    """Fork skills (context: fork) are NOT preprocessed in _load_skill()."""
+    from amplifier_module_tool_skills import SkillsTool
+
+    skill_dir = tmp_path / "fork-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        """---
+name: fork-skill
+description: Fork skill with SKILL_DIR placeholder
+context: fork
+---
+Fork path: ${SKILL_DIR}/data
+"""
+    )
+
+    tool = SkillsTool({}, None, resolved_dirs=[tmp_path])
+    result = await tool._load_skill("fork-skill")
+
+    assert result.success is True
+    content = result.output["content"]
+    # Fork skills should NOT have ${SKILL_DIR} substituted at this point
+    assert "${SKILL_DIR}" in content
+
+
+@pytest.mark.asyncio
+async def test_load_skill_inline_skill_no_placeholders_unaffected(tmp_path: Path):
+    """Inline skills without ${SKILL_DIR} are returned unchanged."""
+    from amplifier_module_tool_skills import SkillsTool
+
+    skill_dir = tmp_path / "plain-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        """---
+name: plain-skill
+description: Plain skill without any placeholders
+---
+Just plain content here, no substitutions needed.
+"""
+    )
+
+    tool = SkillsTool({}, None, resolved_dirs=[tmp_path])
+    result = await tool._load_skill("plain-skill")
+
+    assert result.success is True
+    content = result.output["content"]
+    assert "Just plain content here, no substitutions needed." in content

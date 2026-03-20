@@ -17,6 +17,7 @@ from amplifier_module_tool_skills.discovery import discover_skills
 from amplifier_module_tool_skills.discovery import discover_skills_multi_source
 from amplifier_module_tool_skills.discovery import extract_skill_body
 from amplifier_module_tool_skills.discovery import get_default_skills_dirs
+from amplifier_module_tool_skills.preprocessing import preprocess
 from amplifier_module_tool_skills.sources import is_remote_source
 from amplifier_module_tool_skills.sources import resolve_skill_source
 from amplifier_module_tool_skills.sources import resolve_skill_sources
@@ -535,6 +536,11 @@ Skill Discovery:
             return ToolResult(
                 success=False,
                 error={"message": f"Failed to load content from {metadata.path}"},
+            )
+
+        if metadata.context != "fork":
+            body = await preprocess(
+                body, skill_dir=metadata.path.parent, arguments=None
             )
 
         logger.info(f"Loaded skill: {skill_name}")
