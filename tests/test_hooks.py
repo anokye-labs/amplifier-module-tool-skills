@@ -36,7 +36,7 @@ async def test_injects_skills_list(sample_skills):
     """Verify skills list is injected."""
     hook = SkillsVisibilityHook(sample_skills, {})
     result = await hook.on_provider_request("provider:request", {})
-    
+
     assert result.action == "inject_context"
     assert result.context_injection is not None
     assert "<system-reminder" in result.context_injection
@@ -51,7 +51,7 @@ async def test_respects_enabled_flag(sample_skills):
     """Verify hook can be disabled."""
     hook = SkillsVisibilityHook(sample_skills, {"enabled": False})
     result = await hook.on_provider_request("provider:request", {})
-    
+
     assert result.action == "continue"
 
 
@@ -60,7 +60,7 @@ async def test_handles_empty_skills():
     """Verify graceful handling of no skills."""
     hook = SkillsVisibilityHook({}, {})
     result = await hook.on_provider_request("provider:request", {})
-    
+
     assert result.action == "continue"
 
 
@@ -76,13 +76,13 @@ async def test_limits_max_visible():
         )
         for i in range(100)
     }
-    
+
     hook = SkillsVisibilityHook(many_skills, {"max_skills_visible": 10})
     result = await hook.on_provider_request("provider:request", {})
-    
+
     assert result.action == "inject_context"
     assert "skill-000" in result.context_injection  # Should show first 10
-    assert "(90 more" in result.context_injection   # Should show truncation
+    assert "(90 more" in result.context_injection  # Should show truncation
     assert "skill-050" not in result.context_injection  # Should not show beyond limit
 
 
@@ -91,7 +91,7 @@ async def test_xml_boundaries_present(sample_skills):
     """Verify XML boundaries are properly formatted."""
     hook = SkillsVisibilityHook(sample_skills, {})
     result = await hook.on_provider_request("provider:request", {})
-    
+
     content = result.context_injection
     assert content.startswith("<system-reminder")
     assert content.endswith("</system-reminder>")
@@ -108,15 +108,15 @@ async def test_configuration_options(sample_skills):
         "ephemeral": False,
         "priority": 15,
     }
-    
+
     hook = SkillsVisibilityHook(sample_skills, config)
     result = await hook.on_provider_request("provider:request", {})
-    
+
     assert result.action == "inject_context"
     assert result.context_injection_role == "system"
     assert result.ephemeral is False
     assert hook.priority == 15
-    
+
     # Check that only 2 skills are shown
     lines = result.context_injection.split("\n")
     skill_lines = [line for line in lines if line.startswith("- **")]
@@ -127,9 +127,9 @@ async def test_configuration_options(sample_skills):
 async def test_default_configuration(sample_skills):
     """Verify default configuration values."""
     hook = SkillsVisibilityHook(sample_skills, {})
-    
+
     assert hook.enabled is True
-    assert hook.inject_role == "user"
+    assert hook.inject_role == "system"
     assert hook.max_visible == 50
     assert hook.ephemeral is True
     assert hook.priority == 20
@@ -140,16 +140,16 @@ async def test_skills_sorted_alphabetically(sample_skills):
     """Verify skills are sorted alphabetically."""
     hook = SkillsVisibilityHook(sample_skills, {})
     result = await hook.on_provider_request("provider:request", {})
-    
+
     content = result.context_injection
     lines = [line for line in content.split("\n") if line.startswith("- **")]
-    
+
     # Extract skill names
     skill_names = []
     for line in lines:
         name = line.split("**")[1]
         skill_names.append(name)
-    
+
     # Verify alphabetical order
     assert skill_names == sorted(skill_names)
 
@@ -159,7 +159,7 @@ async def test_format_includes_descriptions(sample_skills):
     """Verify skill descriptions are included."""
     hook = SkillsVisibilityHook(sample_skills, {})
     result = await hook.on_provider_request("provider:request", {})
-    
+
     content = result.context_injection
     assert "Best practices for Python testing with pytest" in content
     assert "Git branching and commit message standards" in content
@@ -177,10 +177,10 @@ async def test_single_skill():
             source="/skills",
         )
     }
-    
+
     hook = SkillsVisibilityHook(single_skill, {})
     result = await hook.on_provider_request("provider:request", {})
-    
+
     assert result.action == "inject_context"
     assert "test-skill" in result.context_injection
     assert "A test skill" in result.context_injection
@@ -195,8 +195,125 @@ async def test_ephemeral_flag_propagates(sample_skills):
     hook_ephemeral = SkillsVisibilityHook(sample_skills, {"ephemeral": True})
     result_ephemeral = await hook_ephemeral.on_provider_request("provider:request", {})
     assert result_ephemeral.ephemeral is True
-    
+
     # Test with ephemeral=False
     hook_persistent = SkillsVisibilityHook(sample_skills, {"ephemeral": False})
-    result_persistent = await hook_persistent.on_provider_request("provider:request", {})
+    result_persistent = await hook_persistent.on_provider_request(
+        "provider:request", {}
+    )
     assert result_persistent.ephemeral is False
+
+
+# --- Invocation Control Tests ---
+
+
+@pytest.mark.asyncio
+async def test_hides_skill_with_disable_model_invocation_true():
+    """Skills with disable_model_invocation=True must not appear in context injection."""
+    skills = {
+        "visible-skill": SkillMetadata(
+            name="visible-skill",
+            description="This skill should be visible",
+            path=Path("/skills/visible-skill/SKILL.md"),
+            source="/skills",
+            disable_model_invocation=False,
+        ),
+        "hidden-skill": SkillMetadata(
+            name="hidden-skill",
+            description="This skill should be hidden",
+            path=Path("/skills/hidden-skill/SKILL.md"),
+            source="/skills",
+            disable_model_invocation=True,
+        ),
+    }
+
+    hook = SkillsVisibilityHook(skills, {})
+    result = await hook.on_provider_request("provider:request", {})
+
+    assert result.action == "inject_context"
+    assert "visible-skill" in result.context_injection
+    assert "hidden-skill" not in result.context_injection
+
+
+@pytest.mark.asyncio
+async def test_shows_skill_without_disable_model_invocation():
+    """Skills without disable_model_invocation (default False) are still visible."""
+    skills = {
+        "normal-skill": SkillMetadata(
+            name="normal-skill",
+            description="A normal skill with default invocation control",
+            path=Path("/skills/normal-skill/SKILL.md"),
+            source="/skills",
+            # disable_model_invocation defaults to False
+        ),
+    }
+
+    hook = SkillsVisibilityHook(skills, {})
+    result = await hook.on_provider_request("provider:request", {})
+
+    assert result.action == "inject_context"
+    assert "normal-skill" in result.context_injection
+    assert "A normal skill with default invocation control" in result.context_injection
+
+
+@pytest.mark.asyncio
+async def test_all_skills_hidden_returns_continue():
+    """When all skills have disable_model_invocation=True, hook should return continue."""
+    skills = {
+        "hidden-1": SkillMetadata(
+            name="hidden-1",
+            description="First hidden skill",
+            path=Path("/skills/hidden-1/SKILL.md"),
+            source="/skills",
+            disable_model_invocation=True,
+        ),
+        "hidden-2": SkillMetadata(
+            name="hidden-2",
+            description="Second hidden skill",
+            path=Path("/skills/hidden-2/SKILL.md"),
+            source="/skills",
+            disable_model_invocation=True,
+        ),
+    }
+
+    hook = SkillsVisibilityHook(skills, {})
+    result = await hook.on_provider_request("provider:request", {})
+
+    # No visible skills → should behave like no skills
+    assert result.action == "continue"
+
+
+@pytest.mark.asyncio
+async def test_truncation_count_uses_filtered_visible_skills():
+    """Truncation count must be based on filtered visible skills, not total skills."""
+    # Create 15 visible + 5 hidden skills; max_visible=10
+    # Truncation message should say "5 more" (15 - 10), not "10 more" (20 - 10)
+    skills = {}
+    for i in range(15):
+        name = f"visible-{i:03d}"
+        skills[name] = SkillMetadata(
+            name=name,
+            description=f"Visible skill {i}",
+            path=Path(f"/skills/{name}/SKILL.md"),
+            source="/skills",
+            disable_model_invocation=False,
+        )
+    for i in range(5):
+        name = f"hidden-{i:03d}"
+        skills[name] = SkillMetadata(
+            name=name,
+            description=f"Hidden skill {i}",
+            path=Path(f"/skills/{name}/SKILL.md"),
+            source="/skills",
+            disable_model_invocation=True,
+        )
+
+    hook = SkillsVisibilityHook(skills, {"max_skills_visible": 10})
+    result = await hook.on_provider_request("provider:request", {})
+
+    assert result.action == "inject_context"
+    # 15 visible skills with max 10 shown → 5 more remaining
+    assert "(5 more" in result.context_injection
+    # Hidden skills must not appear
+    assert "hidden-000" not in result.context_injection
+    assert "hidden-001" not in result.context_injection

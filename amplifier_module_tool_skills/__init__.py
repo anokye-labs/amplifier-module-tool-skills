@@ -17,6 +17,8 @@ from amplifier_module_tool_skills.discovery import discover_skills
 from amplifier_module_tool_skills.discovery import discover_skills_multi_source
 from amplifier_module_tool_skills.discovery import extract_skill_body
 from amplifier_module_tool_skills.discovery import get_default_skills_dirs
+from amplifier_module_tool_skills.model_resolver import resolve_skill_model
+from amplifier_module_tool_skills.preprocessing import preprocess
 from amplifier_module_tool_skills.sources import is_remote_source
 from amplifier_module_tool_skills.sources import resolve_skill_source
 from amplifier_module_tool_skills.sources import resolve_skill_sources
@@ -135,6 +137,7 @@ async def mount(
             "skills:discovered",  # When skills are found during mount
             "skill:loaded",  # When skill loaded successfully (includes hooks config)
             "skill:unloaded",  # When skill is unloaded (for hook cleanup)
+            "skill:command_registered",  # When a skill is registered as a slash command
         ]
     )
     coordinator.register_capability("observability.events", obs_events)
@@ -150,13 +153,14 @@ async def mount(
 
     # Mount skills visibility hook if enabled
     visibility_config = config.get("visibility", {})
+    unregister_visibility = None
     if visibility_config.get("enabled", True):  # Default: enabled
         from amplifier_module_tool_skills.hooks import SkillsVisibilityHook
 
         hook = SkillsVisibilityHook(tool.skills, visibility_config)
 
-        # Register hook on provider:request event
-        coordinator.hooks.register(
+        # Register hook on provider:request event; capture unregister callable
+        unregister_visibility = coordinator.hooks.register(
             event="provider:request",
             handler=hook.on_provider_request,
             priority=hook.priority,
@@ -175,6 +179,37 @@ async def mount(
         },
     )
 
+    # Register skills.user_invocable capability (primary mechanism for slash-command integration)
+    # This replaces the hook-based messaging bus pattern with a direct capability registration.
+    user_invocable_skills = {
+        skill_name: {
+            "description": skill_meta.description,
+            "disable_model_invocation": skill_meta.disable_model_invocation,
+            "context": skill_meta.context,
+        }
+        for skill_name, skill_meta in tool.skills.items()
+        if skill_meta.user_invocable
+    }
+    if user_invocable_skills:
+        coordinator.register_capability("skills.user_invocable", user_invocable_skills)
+        logger.info(
+            f"Registered skills.user_invocable capability with {len(user_invocable_skills)} skills"
+        )
+
+    # Emit skill:command_registered for each user-invocable skill (kept for backward compatibility)
+    for skill_name, skill_meta in tool.skills.items():
+        if skill_meta.user_invocable:
+            await coordinator.hooks.emit(
+                "skill:command_registered",
+                {
+                    "skill_name": skill_name,
+                    "description": skill_meta.description,
+                    "disable_model_invocation": skill_meta.disable_model_invocation,
+                    "context": skill_meta.context,
+                },
+            )
+            logger.debug(f"Emitted skill:command_registered for {skill_name}")
+
     # Return cleanup function that emits skill:unloaded for each loaded skill
     async def cleanup() -> None:
         """Cleanup function that emits skill:unloaded events."""
@@ -191,6 +226,15 @@ async def mount(
                 )
                 logger.debug(f"Emitted skill:unloaded for {skill_name}")
         tool.loaded_skills.clear()
+
+        # Unregister the visibility hook to prevent it persisting after cleanup
+        if unregister_visibility is not None:
+            try:
+                unregister_visibility()
+            except Exception:
+                logger.warning(
+                    "Failed to unregister skills-visibility hook during cleanup"
+                )
 
     return cleanup
 
@@ -537,6 +581,14 @@ Skill Discovery:
                 error={"message": f"Failed to load content from {metadata.path}"},
             )
 
+        if metadata.context != "fork":
+            body = await preprocess(
+                body,
+                skill_dir=metadata.path.parent,
+                arguments=None,
+                execute_shell=False,
+            )
+
         logger.info(f"Loaded skill: {skill_name}")
         self.loaded_skills.add(skill_name)  # Track for cleanup
 
@@ -550,9 +602,25 @@ Skill Discovery:
                     "content_length": len(body),
                     "version": metadata.version,
                     "skill_directory": str(metadata.path.parent),
-                    "hooks": metadata.hooks,  # Claude Code-compatible hooks config (or None)
+                    "hooks": metadata.hooks,  # Agent Skills-compatible hooks config (or None)
+                    # Enriched fields for hooks-shell skill-scoped hook activation
+                    "context": metadata.context,
+                    "allowed_tools": metadata.allowed_tools,
+                    "disable_model_invocation": metadata.disable_model_invocation,
+                    "user_invocable": metadata.user_invocable,
+                    "slash_command": metadata.name,
                 },
             )
+
+        # Fork detection: check if this skill should be executed via delegate
+        if metadata.context == "fork" and self.coordinator:
+            spawn_fn = self.coordinator.get_capability("session.spawn")
+            if spawn_fn is not None:
+                return await self._execute_fork(skill_name, metadata, body)
+            else:
+                logger.warning(
+                    f"Fork skill '{skill_name}' loaded inline (session.spawn not available)"
+                )
 
         return ToolResult(
             success=True,
@@ -565,3 +633,97 @@ Skill Discovery:
                 "loaded_from": metadata.source,  # Source directory for context
             },
         )
+
+    async def _execute_fork(
+        self,
+        skill_name: str,
+        metadata: Any,
+        body: str,
+    ) -> ToolResult:
+        """Execute a fork skill by delegating to a sub-session via spawn.
+
+        Args:
+            skill_name: Name of the skill being executed.
+            metadata: Skill metadata containing model/agent configuration.
+            body: Raw (unpreprocessed) skill body content.
+
+        Returns:
+            ToolResult containing the delegate response, or an error ToolResult
+            if execution fails.
+        """
+        try:
+            # _execute_fork() is only called when coordinator is confirmed non-None
+            assert self.coordinator is not None
+
+            # 1. Preprocess body with skill_dir and arguments
+            # Remote-source skills are untrusted — block shell execution
+            is_trusted = not is_remote_source(metadata.source)
+            processed_body = await preprocess(
+                body, skill_dir=metadata.path.parent, arguments=None, trusted=is_trusted
+            )
+
+            # 2. Resolve model selection via resolve_skill_model() using metadata fields
+            model_resolution = resolve_skill_model(
+                provider_preferences=metadata.provider_preferences,
+                model_role=metadata.model_role,
+                model=metadata.model,
+                agent=metadata.agent,
+            )
+
+            provider_preferences = model_resolution.get("provider_preferences")
+            resolved_model_role = model_resolution.get("model_role")
+
+            # 3. Attempt routing matrix resolution if model_role resolved but no provider_preferences
+            if resolved_model_role is not None and provider_preferences is None:
+                routing_matrix = self.coordinator.get_capability("routing_matrix")
+                if routing_matrix is not None:
+                    resolved = routing_matrix.resolve(resolved_model_role)
+                    if resolved:
+                        provider_preferences = resolved
+
+            # 4. Get spawn function and related context from coordinator capabilities
+            spawn_fn = self.coordinator.get_capability("session.spawn")
+            parent_session = self.coordinator.get_capability("session.current")
+            agent_configs = self.coordinator.get_capability("agent_configs")
+            sub_session_id = None
+            session_metadata = {"skill_name": skill_name, "context": "fork"}
+
+            # 5. Build tool_inheritance from metadata.allowed_tools
+            tool_inheritance: dict[str, Any] = {}
+            if metadata.allowed_tools:
+                tool_inheritance["allowed_tools"] = metadata.allowed_tools
+
+            # 6. Call spawn_fn with assembled arguments
+            result = await spawn_fn(
+                agent_name=f"skill:{skill_name}",
+                instruction=processed_body,
+                parent_session=parent_session,
+                agent_configs=agent_configs,
+                sub_session_id=sub_session_id,
+                provider_preferences=provider_preferences,
+                session_metadata=session_metadata,
+                tool_inheritance=tool_inheritance,
+            )
+
+            # 7. Return ToolResult with delegate output fields
+            return ToolResult(
+                success=True,
+                output={
+                    "response": result.get("response"),
+                    "session_id": result.get("session_id"),
+                    "skill_name": skill_name,
+                    "context": "fork",
+                    "turn_count": result.get("turn_count"),
+                    "status": result.get("status"),
+                },
+            )
+
+        except Exception as exc:  # noqa: BLE001
+            logger.error(f"Fork execution failed for skill '{skill_name}': {exc}")
+            return ToolResult(
+                success=False,
+                error={
+                    "message": f"Fork execution failed: {exc}",
+                    "skill_name": skill_name,
+                },
+            )

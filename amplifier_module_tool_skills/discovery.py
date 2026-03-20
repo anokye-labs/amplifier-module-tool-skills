@@ -6,7 +6,6 @@ Shared utilities for finding and parsing SKILL.md files.
 import logging
 import os
 import re
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -29,7 +28,7 @@ class SkillMetadata:
     Required fields: name, description
     Optional fields: version, license, compatibility, allowed-tools, metadata, hooks
 
-    Hooks field follows Claude Code hooks format for skill-scoped hooks that
+    Hooks field follows Agent Skills hooks format for skill-scoped hooks that
     activate when the skill is loaded and deactivate when unloaded.
     """
 
@@ -44,7 +43,16 @@ class SkillMetadata:
     )
     allowed_tools: list[str] | None = None
     metadata: dict[str, Any] | None = None
-    hooks: dict[str, Any] | None = None  # Claude Code-compatible hooks config
+    hooks: dict[str, Any] | None = None  # Agent Skills-compatible hooks config
+    trusted: bool = True  # False for remote-source skills; blocks shell execution
+    # Enhanced frontmatter fields (Amplifier extended format)
+    context: str | None = None  # Execution context (e.g., 'fork')
+    agent: str | None = None  # Agent to use (e.g., 'foundation:explorer')
+    disable_model_invocation: bool = False  # Prevent LLM calls when loading
+    user_invocable: bool = False  # Whether users can invoke this skill directly
+    model: str | None = None  # Preferred model for this skill
+    model_role: str | list[str] | None = None  # Model role or fallback chain
+    provider_preferences: list[dict] | None = None  # Provider/model preferences
 
 
 def parse_skill_frontmatter(skill_path: Path) -> dict[str, Any] | None:
@@ -129,13 +137,24 @@ def discover_skills(skills_dir: Path) -> dict[str, SkillMetadata]:
         logger.warning(f"Skills path is not a directory: {skills_dir}")
         return skills
 
-    # Scan for SKILL.md files (recursive)
-    # Python 3.13+ changed Path.glob() to not follow symlinks by default.
-    # Pass recurse_symlinks=True on 3.13+ to traverse symlinked skill dirs.
-    glob_kwargs: dict[str, bool] = {}
-    if sys.version_info >= (3, 13):
-        glob_kwargs["recurse_symlinks"] = True
-    for skill_file in skills_dir.glob("**/SKILL.md", **glob_kwargs):
+    # Scan for SKILL.md files (recursive).
+    # Use os.walk with followlinks=True to reliably traverse symlinked
+    # subdirectories on all supported Python versions (3.12+).
+    # Boundary checking prevents symlink traversal outside the skills directory
+    # (e.g., a symlink evil -> /etc would otherwise index the entire /etc tree).
+    base_resolved = skills_dir.resolve()
+    skill_files = []
+    for root, _dirs, files in os.walk(skills_dir, followlinks=True):
+        root_resolved = Path(root).resolve()
+        if not root_resolved.is_relative_to(base_resolved):
+            logger.warning(
+                f"Skipping symlink that escapes skill directory boundary: {root} "
+                f"(resolves to {root_resolved}, outside {base_resolved})"
+            )
+            continue
+        if "SKILL.md" in files:
+            skill_files.append(Path(root) / "SKILL.md")
+    for skill_file in skill_files:
         try:
             # Parse frontmatter
             frontmatter = parse_skill_frontmatter(skill_file)
@@ -206,7 +225,7 @@ def discover_skills(skills_dir: Path) -> dict[str, SkillMetadata]:
                     f"({len(compatibility)} chars). Continuing with discovery."
                 )
 
-            # Parse hooks field (Claude Code-compatible format)
+            # Parse hooks field (Agent Skills-compatible format)
             # Skills can embed hooks that activate when the skill is loaded
             hooks_config = frontmatter.get("hooks")
             if hooks_config and not isinstance(hooks_config, dict):
@@ -214,6 +233,73 @@ def discover_skills(skills_dir: Path) -> dict[str, SkillMetadata]:
                     f"Invalid hooks format in {skill_file}: expected dict, got {type(hooks_config)}"
                 )
                 hooks_config = None
+
+            # Parse enhanced frontmatter fields (supports hyphen-case and snake_case)
+            # context: only 'fork' is currently supported
+            context_val = frontmatter.get("context")
+            if context_val is not None:
+                if context_val != "fork":
+                    logger.warning(
+                        f"Invalid context value '{context_val}' in {skill_file}. "
+                        f"Only 'fork' is supported. Ignoring context field."
+                    )
+                    context_val = None
+
+            agent_val = frontmatter.get("agent")
+
+            # disable-model-invocation supports both hyphen and snake_case
+            disable_model_invocation_val = frontmatter.get(
+                "disable-model-invocation",
+                frontmatter.get("disable_model_invocation", False),
+            )
+            if not isinstance(disable_model_invocation_val, bool):
+                disable_model_invocation_val = bool(disable_model_invocation_val)
+
+            # user-invocable supports both hyphen and snake_case
+            user_invocable_val = frontmatter.get(
+                "user-invocable",
+                frontmatter.get("user_invocable", False),
+            )
+            if not isinstance(user_invocable_val, bool):
+                user_invocable_val = bool(user_invocable_val)
+
+            model_val = frontmatter.get("model")
+
+            # model_role supports both string and list (fallback chain)
+            model_role_val = frontmatter.get("model_role") or frontmatter.get(
+                "model-role"
+            )
+            if model_role_val is not None:
+                if not isinstance(model_role_val, (str, list)):
+                    logger.warning(
+                        f"Invalid model_role format in {skill_file}: "
+                        f"expected str or list, got {type(model_role_val)}. Ignoring."
+                    )
+                    model_role_val = None
+
+            # provider_preferences must be a list of dicts
+            provider_preferences_val = frontmatter.get(
+                "provider_preferences"
+            ) or frontmatter.get("provider-preferences")
+            if provider_preferences_val is not None:
+                if not isinstance(provider_preferences_val, list):
+                    logger.warning(
+                        f"Invalid provider_preferences format in {skill_file}: "
+                        f"expected list, got {type(provider_preferences_val)}. Ignoring."
+                    )
+                    provider_preferences_val = None
+                else:
+                    # Validate each entry is a dict
+                    valid_prefs = []
+                    for pref in provider_preferences_val:
+                        if isinstance(pref, dict):
+                            valid_prefs.append(pref)
+                        else:
+                            logger.warning(
+                                f"Invalid provider_preferences entry in {skill_file}: "
+                                f"expected dict, got {type(pref)}. Skipping entry."
+                            )
+                    provider_preferences_val = valid_prefs if valid_prefs else None
 
             # Create metadata
             metadata = SkillMetadata(
@@ -227,6 +313,13 @@ def discover_skills(skills_dir: Path) -> dict[str, SkillMetadata]:
                 allowed_tools=allowed_tools,
                 metadata=frontmatter.get("metadata"),
                 hooks=hooks_config,
+                context=context_val,
+                agent=agent_val,
+                disable_model_invocation=disable_model_invocation_val,
+                user_invocable=user_invocable_val,
+                model=model_val,
+                model_role=model_role_val,
+                provider_preferences=provider_preferences_val,
             )
 
             skills[name] = metadata

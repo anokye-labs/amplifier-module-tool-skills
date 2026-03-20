@@ -17,19 +17,18 @@ DEFAULT_SKILLS_CACHE_DIR = Path("~/.amplifier/cache/skills").expanduser()
 
 
 def is_remote_source(source: str) -> bool:
-    """Check if a source string is a remote URL (git+https://, etc.).
+    """Check if a source string is a secure remote URL (git+https://, https://).
+
+    Only accepts encrypted transport protocols. http:// is intentionally
+    rejected to prevent man-in-the-middle (MITM) attacks on skill sources.
 
     Args:
         source: Source string to check.
 
     Returns:
-        True if source is a remote URL, False if local path.
+        True if source is a secure remote URL, False if local path or http://.
     """
-    return (
-        source.startswith("git+")
-        or source.startswith("https://")
-        or source.startswith("http://")
-    )
+    return source.startswith("git+") or source.startswith("https://")
 
 
 async def resolve_skill_source(
