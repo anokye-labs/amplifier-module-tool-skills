@@ -110,20 +110,20 @@ async def _run_shell_command(command: str, cwd: Path) -> str:
             proc.kill()
             await proc.communicate()
             logger.warning(f"Shell command timed out: {command!r}")
-            return f"[error: command timed out: {command}]"
+            return f"[preprocessing error: command timed out: {command}]"
 
         if proc.returncode != 0:
             stderr_text = stderr_bytes.decode(errors="replace").strip()
             logger.warning(
                 f"Shell command failed (exit {proc.returncode}): {command!r} — {stderr_text}"
             )
-            return f"[error: command failed (exit {proc.returncode}): {command}]"
+            return f"[preprocessing error: command failed (exit {proc.returncode}): {command}]"
 
         return stdout_bytes.decode(errors="replace").strip()
 
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"Shell command error: {command!r} — {exc}")
-        return f"[error: {exc}]"
+        return f"[preprocessing error: {exc}]"
 
 
 async def preprocess(

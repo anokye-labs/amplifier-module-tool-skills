@@ -65,3 +65,54 @@ async def test_shell_command_execution(tmp_path):
     body = "Version: !`echo hello`"
     result = await preprocess(body, skill_dir=tmp_path, arguments=None)
     assert result == "Version: hello"
+
+
+@pytest.mark.asyncio
+async def test_shell_echo_hello_world(tmp_path):
+    """!`echo hello-world` is replaced with 'hello-world' (hyphenated output)."""
+    body = "!`echo hello-world`"
+    result = await preprocess(body, skill_dir=tmp_path, arguments=None)
+    assert result == "hello-world"
+
+
+@pytest.mark.asyncio
+async def test_shell_failed_command_injects_error(tmp_path):
+    """Failed shell commands inject error inline with '[preprocessing error:' prefix."""
+    body = "Result: !`exit 1`"
+    result = await preprocess(body, skill_dir=tmp_path, arguments=None)
+    assert "[preprocessing error:" in result
+
+
+@pytest.mark.asyncio
+async def test_shell_command_uses_skill_dir_as_cwd(tmp_path):
+    """Shell commands execute with skill_dir as working directory (can cat files from there)."""
+    # Write a file in the skill dir
+    (tmp_path / "hello.txt").write_text("from-skill-dir\n")
+    body = "!`cat hello.txt`"
+    result = await preprocess(body, skill_dir=tmp_path, arguments=None)
+    assert result == "from-skill-dir"
+
+
+@pytest.mark.asyncio
+async def test_shell_multiple_patterns_all_replaced(tmp_path):
+    """Multiple !`command` patterns in a body are all replaced."""
+    body = "A=!`echo alpha` B=!`echo beta`"
+    result = await preprocess(body, skill_dir=tmp_path, arguments=None)
+    assert result == "A=alpha B=beta"
+
+
+@pytest.mark.asyncio
+async def test_shell_substitution_runs_before_shell_execution(tmp_path):
+    """String substitution ($ARGUMENTS etc.) runs before shell execution."""
+    # $ARGUMENTS is substituted to "world", then !`echo world` runs
+    body = "!`echo $ARGUMENTS`"
+    result = await preprocess(body, skill_dir=tmp_path, arguments="world")
+    assert result == "world"
+
+
+@pytest.mark.asyncio
+async def test_normal_backticks_not_affected(tmp_path):
+    """Normal backticks like `code` are not treated as shell commands."""
+    body = "Use `some_function()` in your code."
+    result = await preprocess(body, skill_dir=tmp_path, arguments=None)
+    assert result == "Use `some_function()` in your code."
