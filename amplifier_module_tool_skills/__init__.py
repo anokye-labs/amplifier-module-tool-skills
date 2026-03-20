@@ -673,7 +673,7 @@ Skill Discovery:
                 tool_inheritance=tool_inheritance,
             )
 
-            # 6. Return ToolResult with delegate output fields
+            # 7. Return ToolResult with delegate output fields
             return ToolResult(
                 success=True,
                 output={
