@@ -93,10 +93,6 @@ class SkillsVisibilityHook:
             if getattr(meta, "disable_model_invocation", False)
         }
 
-        # Return empty string only when both partitions are empty
-        if not regular_skills and not user_invoked_skills:
-            return ""
-
         lines = []
 
         # Build regular skills section (with max_visible cap)
