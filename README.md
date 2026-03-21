@@ -11,6 +11,12 @@ This module provides a progressive disclosure knowledge system for Amplifier age
 - 👁️ **Visibility hook** - Skills automatically shown to agent (no need to list first)
 - 📚 **Multi-source support** - Load skills from multiple directories
 - 🔄 **Progressive disclosure** - Three levels of knowledge depth
+- 🔀 **Fork execution** (`context: fork`) - Skills run as isolated subagents with their own conversation
+- ⚡ **Shell preprocessing** (`` !`command` ``) - Dynamic content injection with security hardening
+- 🎯 **Model resolution** - 5-level precedence chain for semantic model selection
+- 🪝 **Auto-load hooks** (`auto_load`) - Skills activate at mount time for always-on quality gates
+- 🔍 **SkillsDiscovery** - Capability interface for CLI integration (slash commands)
+- 🚫 **Invocation control** (`disable-model-invocation`, `user-invocable`) - Fine-grained skill activation
 
 **Progressive Disclosure Levels:**
 - **Level 1 (Metadata)**: Name + description (~100 tokens) - Always visible
@@ -355,6 +361,46 @@ Instructions the agent follows when skill is loaded.
 **Required fields:** `name` and `description` in YAML frontmatter  
 **Format:** See [Agent Skills specification](https://agentskills.io/specification)
 
+#### Enhanced Frontmatter Fields
+
+Beyond the base spec, the following fields enable advanced skill behaviors:
+
+```yaml
+---
+name: my-power-skill
+description: An advanced skill with enhanced features
+
+# Execution model
+context: fork                  # Run as isolated subagent (own conversation + tools)
+
+# Agent and model selection
+agent: Explore | Plan | general-purpose  # Target agent type
+model_role: coding | fast | reasoning | critique | general  # Semantic model routing
+provider_preferences:          # Explicit model override
+  - provider: anthropic
+    model: claude-sonnet-4-20250514
+
+# Invocation control
+disable-model-invocation: true  # Not triggered by model — user-invoked only (via /command)
+user-invocable: true            # Registers as a slash command in the CLI
+auto-load: true                 # Activates at session start (for hook-based skills)
+
+# Tool scoping
+allowed-tools: Read Grep Glob Bash  # Restrict subagent's available tools
+---
+```
+
+| Field | Purpose |
+|-------|---------|
+| `context: fork` | Skill runs as an isolated subagent with its own conversation |
+| `agent` | Target agent archetype for routing |
+| `model_role` | Semantic role for model selection via the routing matrix |
+| `provider_preferences` | Explicit provider/model override (highest precedence) |
+| `disable-model-invocation` | Prevents the model from loading the skill autonomously |
+| `user-invocable` | Registers the skill as a `/command` in the CLI |
+| `auto-load` | Skill activates at session start via embedded hooks |
+| `allowed-tools` | Restricts which tools the forked subagent can access |
+
 ### Creating a Simple Skill
 
 ```bash
@@ -418,6 +464,35 @@ echo "# Examples" > examples.md
 **Module Type:** Tool  
 **Mount Point:** `tools`  
 **Entry Point:** `amplifier_module_tool_skills:mount`
+
+## Security
+
+The module applies defense-in-depth hardening for skill execution:
+
+- **Sanitized subprocess environment** — Shell preprocessing (`` !`command` ``) runs with API keys and secrets stripped from the environment
+- **Process group isolation** — Timed-out shell commands kill the entire process group, not just the parent
+- **Trust gate for remote skills** — Remote skill sources (`git+https://`) are validated before execution
+- **Shell output wrapping and truncation** — Subprocess output is bounded to prevent context overflow
+- **HTTPS-only for remote sources** — Plain HTTP git URLs are rejected
+- **Symlink boundary checking** — Skill file access is confined to the repository root boundary
+
+## auto_load
+
+Skills with `auto-load: true` (or `auto_load: true`) in their frontmatter activate automatically when the skills module mounts. This enables always-on, hook-based quality gates that run without explicit user invocation.
+
+**Use case:** A skill that injects a pre-response quality check or coding standard reminder at the start of every session, without the user needing to load it manually.
+
+```yaml
+---
+name: quality-gate
+description: Always-on quality check
+auto-load: true
+---
+
+[Hook content that activates at session start]
+```
+
+When the tool-skills module mounts, it scans all skill sources for `auto_load` skills and registers their content as session hooks.
 
 ## Testing
 
