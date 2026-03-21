@@ -104,22 +104,28 @@ async def _resolve_remote_source(source: str, cache_dir: Path) -> Path | None:
     repo_name = url.rstrip("/").split("/")[-1].replace(".git", "")
     cache_path = cache_dir / f"{repo_name}-{cache_key}"
 
-    # Check if already cached
+    # Check if already cached (valid = has metadata written after successful clone)
     if cache_path.exists():
-        logger.debug(f"Using cached skill source: {cache_path}")
-        result_path = cache_path / subdirectory if subdirectory else cache_path
-        if result_path.exists():
-            return result_path
-        # Cache exists but subdirectory doesn't - fall through to re-clone
+        meta_file = cache_path / ".amplifier_cache_meta.json"
+        if meta_file.exists():
+            logger.debug(f"Using cached skill source: {cache_path}")
+            result_path = cache_path / subdirectory if subdirectory else cache_path
+            if result_path.exists():
+                return result_path
+            # Cache valid but subdirectory doesn't exist - fall through to re-clone
+        else:
+            # Directory exists but no metadata = corrupt/partial clone
+            logger.warning(f"Removing corrupt skills cache (no metadata): {cache_path}")
+        # Fall through to cleanup and re-clone
 
     # Clone the repository
     cache_dir.mkdir(parents=True, exist_ok=True)
 
+    import shutil
+
     try:
         # Remove stale cache if exists
         if cache_path.exists():
-            import shutil
-
             shutil.rmtree(cache_path)
 
         # Clone with depth=1 for efficiency
@@ -129,6 +135,9 @@ async def _resolve_remote_source(source: str, cache_dir: Path) -> Path | None:
 
         if result.returncode != 0:
             logger.error(f"Git clone failed: {result.stderr}")
+            # Clean up partial clone to prevent stale lock files on next attempt
+            if cache_path.exists():
+                shutil.rmtree(cache_path, ignore_errors=True)
             return None
 
         # Write cache metadata so `amplifier update` can track and refresh this cache
@@ -168,9 +177,13 @@ async def _resolve_remote_source(source: str, cache_dir: Path) -> Path | None:
 
     except subprocess.TimeoutExpired:
         logger.error(f"Git clone timed out for: {url}")
+        if cache_path.exists():
+            shutil.rmtree(cache_path, ignore_errors=True)
         return None
     except Exception as e:
         logger.error(f"Failed to clone skill source '{source}': {e}")
+        if cache_path.exists():
+            shutil.rmtree(cache_path, ignore_errors=True)
         return None
 
 
