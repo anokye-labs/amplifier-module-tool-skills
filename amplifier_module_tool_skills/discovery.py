@@ -36,7 +36,7 @@ class SkillMetadata:
     https://agentskills.io/specification
 
     Required fields: name, description
-    Optional fields: version, license, compatibility, allowed-tools, metadata, hooks
+    Optional fields: version, license, compatibility, allowed-tools, metadata, hooks, auto-load
 
     Hooks field follows Agent Skills hooks format for skill-scoped hooks that
     activate when the skill is loaded and deactivate when unloaded.
@@ -63,6 +63,7 @@ class SkillMetadata:
     model: str | None = None  # Preferred model for this skill
     model_role: str | list[str] | None = None  # Model role or fallback chain
     provider_preferences: list[dict] | None = None  # Provider/model preferences
+    auto_load: bool = False  # Emit skill:loaded at mount time (for hook-bearing skills)
 
 
 def parse_skill_frontmatter(skill_path: Path) -> dict[str, Any] | None:
@@ -280,6 +281,15 @@ def discover_skills(skills_dir: Path) -> dict[str, SkillMetadata]:
             if not isinstance(user_invocable_val, bool):
                 user_invocable_val = bool(user_invocable_val)
 
+            # auto-load supports both hyphen and snake_case
+            # When True, skill:loaded is emitted at mount time (for hook-bearing skills)
+            auto_load_val = frontmatter.get(
+                "auto-load",
+                frontmatter.get("auto_load", False),
+            )
+            if not isinstance(auto_load_val, bool):
+                auto_load_val = bool(auto_load_val)
+
             model_val = frontmatter.get("model")
 
             # model_role supports both string and list (fallback chain)
@@ -334,6 +344,7 @@ def discover_skills(skills_dir: Path) -> dict[str, SkillMetadata]:
                 agent=agent_val,
                 disable_model_invocation=disable_model_invocation_val,
                 user_invocable=user_invocable_val,
+                auto_load=auto_load_val,
                 model=model_val,
                 model_role=model_role_val,
                 provider_preferences=provider_preferences_val,
