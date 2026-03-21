@@ -325,6 +325,50 @@ async def test_truncation_count_uses_filtered_visible_skills():
     assert "User-invoked skills" in result.context_injection
 
 
+# --- Contradiction-free visibility tests ---
+
+
+@pytest.mark.asyncio
+async def test_user_invoked_section_header_is_neutral():
+    """User-invoked section header must use neutral text (available via /command)."""
+    skills = {
+        "cmd-skill": SkillMetadata(
+            name="cmd-skill",
+            description="A user-invoked command skill",
+            path=Path("/skills/cmd-skill/SKILL.md"),
+            source="/skills",
+            disable_model_invocation=True,
+        ),
+    }
+
+    hook = SkillsVisibilityHook(skills, {})
+    result = await hook.on_provider_request("provider:request", {})
+
+    assert result.action == "inject_context"
+    content = result.context_injection
+    assert "User-invoked skills (available via /command):" in content
+
+
+@pytest.mark.asyncio
+async def test_behavioral_note_not_present():
+    """The 'DO NOT mention these skills' behavioral note must be removed entirely."""
+    skills = {
+        "some-skill": SkillMetadata(
+            name="some-skill",
+            description="A skill",
+            path=Path("/skills/some-skill/SKILL.md"),
+            source="/skills",
+        ),
+    }
+
+    hook = SkillsVisibilityHook(skills, {})
+    result = await hook.on_provider_request("provider:request", {})
+
+    assert result.action == "inject_context"
+    content = result.context_injection
+    assert "DO NOT mention" not in content
+
+
 # --- User-invoked skills section tests ---
 
 
@@ -357,10 +401,7 @@ async def test_user_invoked_skills_shown_in_separate_section():
     assert "Available skills (use load_skill tool):" in content
     assert "regular-skill" in content
     # User-invoked skill in its own section
-    assert (
-        "User-invoked skills (use load_skill or suggest the /command to the user):"
-        in content
-    )
+    assert "User-invoked skills (available via /command):" in content
     assert "cmd-skill" in content
 
 

@@ -118,20 +118,12 @@ class SkillsVisibilityHook:
         if user_invoked_skills:
             if lines:
                 lines.append("")
-            lines.append(
-                "User-invoked skills (use load_skill or suggest the /command to the user):"
-            )
+            lines.append("User-invoked skills (available via /command):")
             lines.append("")
             for name, metadata in sorted(user_invoked_skills.items()):
                 lines.append(f"- **{name}**: {metadata.description}")
 
         skills_content = "\n".join(lines)
 
-        # Add behavioral note consistent with foundation patterns
-        behavioral_note = (
-            "\n\nThis context is for your reference only. DO NOT mention these skills "
-            "to the user unless they ask. Use load_skill tool to access full content when needed."
-        )
-
         # Wrap in system-reminder tag with source attribution
-        return f'<system-reminder source="hooks-skills-visibility">\n{skills_content}{behavioral_note}\n</system-reminder>'
+        return f'<system-reminder source="hooks-skills-visibility">\n{skills_content}\n</system-reminder>'
