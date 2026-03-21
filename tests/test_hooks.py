@@ -81,6 +81,7 @@ async def test_limits_max_visible():
     result = await hook.on_provider_request("provider:request", {})
 
     assert result.action == "inject_context"
+    assert result.context_injection is not None
     assert "skill-000" in result.context_injection  # Should show first 10
     assert "(90 more" in result.context_injection  # Should show truncation
     assert "skill-050" not in result.context_injection  # Should not show beyond limit
@@ -92,6 +93,7 @@ async def test_xml_boundaries_present(sample_skills):
     hook = SkillsVisibilityHook(sample_skills, {})
     result = await hook.on_provider_request("provider:request", {})
 
+    assert result.context_injection is not None
     content = result.context_injection
     assert content.startswith("<system-reminder")
     assert content.endswith("</system-reminder>")
@@ -118,6 +120,7 @@ async def test_configuration_options(sample_skills):
     assert hook.priority == 15
 
     # Check that only 2 skills are shown
+    assert result.context_injection is not None
     lines = result.context_injection.split("\n")
     skill_lines = [line for line in lines if line.startswith("- **")]
     assert len(skill_lines) == 2
@@ -141,6 +144,7 @@ async def test_skills_sorted_alphabetically(sample_skills):
     hook = SkillsVisibilityHook(sample_skills, {})
     result = await hook.on_provider_request("provider:request", {})
 
+    assert result.context_injection is not None
     content = result.context_injection
     lines = [line for line in content.split("\n") if line.startswith("- **")]
 
@@ -160,6 +164,7 @@ async def test_format_includes_descriptions(sample_skills):
     hook = SkillsVisibilityHook(sample_skills, {})
     result = await hook.on_provider_request("provider:request", {})
 
+    assert result.context_injection is not None
     content = result.context_injection
     assert "Best practices for Python testing with pytest" in content
     assert "Git branching and commit message standards" in content
@@ -182,6 +187,7 @@ async def test_single_skill():
     result = await hook.on_provider_request("provider:request", {})
 
     assert result.action == "inject_context"
+    assert result.context_injection is not None
     assert "test-skill" in result.context_injection
     assert "A test skill" in result.context_injection
     # Should not show truncation message for single skill
@@ -231,6 +237,7 @@ async def test_disable_model_invocation_skill_in_user_invoked_section():
     result = await hook.on_provider_request("provider:request", {})
 
     assert result.action == "inject_context"
+    assert result.context_injection is not None
     assert "visible-skill" in result.context_injection
     # user-invoked skill should be present in the user-invoked section
     assert "user-invoked-skill" in result.context_injection
@@ -254,6 +261,7 @@ async def test_shows_skill_without_disable_model_invocation():
     result = await hook.on_provider_request("provider:request", {})
 
     assert result.action == "inject_context"
+    assert result.context_injection is not None
     assert "normal-skill" in result.context_injection
     assert "A normal skill with default invocation control" in result.context_injection
 
@@ -283,6 +291,7 @@ async def test_all_skills_disable_model_invocation_shows_user_invoked_section():
 
     # All skills are user-invoked → should still inject context with user-invoked section
     assert result.action == "inject_context"
+    assert result.context_injection is not None
     assert "User-invoked skills" in result.context_injection
     assert "hidden-1" in result.context_injection
     assert "hidden-2" in result.context_injection
@@ -317,6 +326,7 @@ async def test_truncation_count_uses_filtered_visible_skills():
     result = await hook.on_provider_request("provider:request", {})
 
     assert result.action == "inject_context"
+    assert result.context_injection is not None
     # 15 visible skills with max 10 shown → 5 more remaining
     assert "(5 more" in result.context_injection
     # User-invoked skills appear in their own section
@@ -345,6 +355,7 @@ async def test_user_invoked_section_header_is_neutral():
     result = await hook.on_provider_request("provider:request", {})
 
     assert result.action == "inject_context"
+    assert result.context_injection is not None
     content = result.context_injection
     assert "User-invoked skills (available via /command):" in content
 
@@ -365,6 +376,7 @@ async def test_behavioral_note_not_present():
     result = await hook.on_provider_request("provider:request", {})
 
     assert result.action == "inject_context"
+    assert result.context_injection is not None
     content = result.context_injection
     assert "DO NOT mention" not in content
 
@@ -396,6 +408,7 @@ async def test_user_invoked_skills_shown_in_separate_section():
     result = await hook.on_provider_request("provider:request", {})
 
     assert result.action == "inject_context"
+    assert result.context_injection is not None
     content = result.context_injection
     # Regular skill in available section
     assert "Available skills (use load_skill tool):" in content
@@ -413,6 +426,7 @@ async def test_user_invoked_section_not_shown_when_none(sample_skills):
     result = await hook.on_provider_request("provider:request", {})
 
     assert result.action == "inject_context"
+    assert result.context_injection is not None
     assert "User-invoked skills" not in result.context_injection
 
 
@@ -433,6 +447,7 @@ async def test_only_user_invoked_skills_still_injects():
     result = await hook.on_provider_request("provider:request", {})
 
     assert result.action == "inject_context"
+    assert result.context_injection is not None
     assert "User-invoked skills" in result.context_injection
     assert "only-cmd-skill" in result.context_injection
     # No regular section since there are no regular skills
