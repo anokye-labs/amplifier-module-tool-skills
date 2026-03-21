@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 from amplifier_core import ToolResult
 
+from amplifier_module_tool_skills.discovery import SkillMetadata
 from amplifier_module_tool_skills.discovery import discover_skills
 from amplifier_module_tool_skills.discovery import discover_skills_multi_source
 from amplifier_module_tool_skills.discovery import extract_skill_body
@@ -137,7 +138,6 @@ async def mount(
             "skills:discovered",  # When skills are found during mount
             "skill:loaded",  # When skill loaded successfully (includes hooks config)
             "skill:unloaded",  # When skill is unloaded (for hook cleanup)
-            "skill:command_registered",  # When a skill is registered as a slash command
         ]
     )
     coordinator.register_capability("observability.events", obs_events)
@@ -169,6 +169,10 @@ async def mount(
 
         logger.info(f"Mounted skills visibility hook with {len(tool.skills)} skills")
 
+    # Register SkillsDiscovery as a kernel capability (before discovery event emission)
+    coordinator.register_capability("skills_discovery", SkillsDiscovery(tool.skills))
+    logger.debug("Registered SkillsDiscovery via register_capability")
+
     # Emit discovery event
     await coordinator.hooks.emit(
         "skills:discovered",
@@ -178,37 +182,6 @@ async def mount(
             "sources": [str(d) for d in tool.skills_dirs],
         },
     )
-
-    # Register skills.user_invocable capability (primary mechanism for slash-command integration)
-    # This replaces the hook-based messaging bus pattern with a direct capability registration.
-    user_invocable_skills = {
-        skill_name: {
-            "description": skill_meta.description,
-            "disable_model_invocation": skill_meta.disable_model_invocation,
-            "context": skill_meta.context,
-        }
-        for skill_name, skill_meta in tool.skills.items()
-        if skill_meta.user_invocable
-    }
-    if user_invocable_skills:
-        coordinator.register_capability("skills.user_invocable", user_invocable_skills)
-        logger.info(
-            f"Registered skills.user_invocable capability with {len(user_invocable_skills)} skills"
-        )
-
-    # Emit skill:command_registered for each user-invocable skill (kept for backward compatibility)
-    for skill_name, skill_meta in tool.skills.items():
-        if skill_meta.user_invocable:
-            await coordinator.hooks.emit(
-                "skill:command_registered",
-                {
-                    "skill_name": skill_name,
-                    "description": skill_meta.description,
-                    "disable_model_invocation": skill_meta.disable_model_invocation,
-                    "context": skill_meta.context,
-                },
-            )
-            logger.debug(f"Emitted skill:command_registered for {skill_name}")
 
     # Return cleanup function that emits skill:unloaded for each loaded skill
     async def cleanup() -> None:
@@ -237,6 +210,61 @@ async def mount(
                 )
 
     return cleanup
+
+
+class SkillsDiscovery:
+    """Provides discovery interface for skills.
+
+    Wraps the skills dict and provides list, find, and shortcut methods.
+    Registered as a capability via coordinator.register_capability().
+    """
+
+    def __init__(self, skills: dict[str, SkillMetadata]):
+        """Initialize with skills dict.
+
+        Args:
+            skills: Dict mapping skill names to SkillMetadata.
+        """
+        self._skills = skills
+
+    def list_skills(self) -> list[tuple[str, str]]:
+        """Return (name, description) pairs sorted alphabetically.
+
+        Returns:
+            List of (name, description) tuples sorted by name.
+        """
+        return [
+            (name, metadata.description)
+            for name, metadata in sorted(self._skills.items())
+        ]
+
+    def find(self, name: str) -> SkillMetadata | None:
+        """Find a skill by name.
+
+        Args:
+            name: Skill name to look up.
+
+        Returns:
+            SkillMetadata if found, None otherwise.
+        """
+        return self._skills.get(name)
+
+    def get_shortcuts(self) -> dict[str, dict[str, Any]]:
+        """Return only user_invocable skills as a name-keyed shortcut dict.
+
+        Returns:
+            Dict mapping skill name to ``{"description": ..., "context": ...}``,
+            one entry per user_invocable skill.  The ``context`` field indicates
+            how the skill is delivered (e.g. "fork" vs "inline").
+        """
+        return {
+            name: {
+                "description": metadata.description,
+                "context": metadata.context,
+            }
+            for name, metadata in self._skills.items()
+            if metadata.user_invocable
+        }
 
 
 class SkillsTool:

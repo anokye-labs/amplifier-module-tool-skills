@@ -69,44 +69,57 @@ class SkillsVisibilityHook:
     def _format_skills_list(self) -> str:
         """Format skills list as markdown with XML boundaries.
 
+        Partitions skills into two sections:
+        - Regular skills (disable_model_invocation=False): shown under 'Available skills'
+          with max_visible cap
+        - User-invoked skills (disable_model_invocation=True): shown under 'User-invoked
+          skills' with no cap
+
         Returns:
             Formatted skills list string, or empty string if no skills
         """
         if not self.skills:
             return ""
 
-        # Filter out skills with disable_model_invocation=True
-        visible_skills = {
+        # Partition skills into regular and user-invoked
+        regular_skills = {
             name: meta
             for name, meta in self.skills.items()
             if not getattr(meta, "disable_model_invocation", False)
         }
+        user_invoked_skills = {
+            name: meta
+            for name, meta in self.skills.items()
+            if getattr(meta, "disable_model_invocation", False)
+        }
 
-        if not visible_skills:
-            return ""
+        lines = []
 
-        # Sort and limit using filtered visible_skills
-        skills_items = sorted(visible_skills.items())[: self.max_visible]
-
-        lines = ["Available skills (use load_skill tool):"]
-        lines.append("")
-
-        for name, metadata in skills_items:
-            lines.append(f"- **{name}**: {metadata.description}")
-
-        # Show truncation if applicable (based on filtered visible_skills count)
-        if len(visible_skills) > self.max_visible:
-            remaining = len(visible_skills) - self.max_visible
+        # Build regular skills section (with max_visible cap)
+        if regular_skills:
+            skills_items = sorted(regular_skills.items())[: self.max_visible]
+            lines.append("Available skills (use load_skill tool):")
             lines.append("")
-            lines.append(f"_({remaining} more - use load_skill(list=true) to see all)_")
+            for name, metadata in skills_items:
+                lines.append(f"- **{name}**: {metadata.description}")
+            # Show truncation if applicable
+            if len(regular_skills) > self.max_visible:
+                remaining = len(regular_skills) - self.max_visible
+                lines.append("")
+                lines.append(
+                    f"_({remaining} more - use load_skill(list=true) to see all)_"
+                )
+
+        # Build user-invoked skills section (no cap)
+        if user_invoked_skills:
+            if lines:
+                lines.append("")
+            lines.append("User-invoked skills (available via /command):")
+            lines.append("")
+            for name, metadata in sorted(user_invoked_skills.items()):
+                lines.append(f"- **{name}**: {metadata.description}")
 
         skills_content = "\n".join(lines)
 
-        # Add behavioral note consistent with foundation patterns
-        behavioral_note = (
-            "\n\nThis context is for your reference only. DO NOT mention these skills "
-            "to the user unless they ask. Use load_skill tool to access full content when needed."
-        )
-
         # Wrap in system-reminder tag with source attribution
-        return f'<system-reminder source="hooks-skills-visibility">\n{skills_content}{behavioral_note}\n</system-reminder>'
+        return f'<system-reminder source="hooks-skills-visibility">\n{skills_content}\n</system-reminder>'
