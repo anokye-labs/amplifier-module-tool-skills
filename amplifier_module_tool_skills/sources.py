@@ -131,6 +131,33 @@ async def _resolve_remote_source(source: str, cache_dir: Path) -> Path | None:
             logger.error(f"Git clone failed: {result.stderr}")
             return None
 
+        # Write cache metadata so `amplifier update` can track and refresh this cache
+        import json as _json
+        from datetime import datetime
+
+        _sha_result = await asyncio.create_subprocess_exec(
+            "git",
+            "rev-parse",
+            "HEAD",
+            cwd=str(cache_path),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _sha_stdout, _ = await _sha_result.communicate()
+        _commit_sha = (
+            _sha_stdout.decode().strip() if _sha_result.returncode == 0 else ""
+        )
+        _meta = {
+            "cached_at": datetime.now().isoformat(),
+            "ref": ref,
+            "commit": _commit_sha,
+            "git_url": url,
+            "type": "skills",
+        }
+        (cache_path / ".amplifier_cache_meta.json").write_text(
+            _json.dumps(_meta, indent=2), encoding="utf-8"
+        )
+
         result_path = cache_path / subdirectory if subdirectory else cache_path
         if result_path.exists():
             logger.info(f"Resolved remote skill source: {source} -> {result_path}")
