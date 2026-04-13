@@ -44,6 +44,8 @@ jobs:
               /^\[\s*draft\s*\]/i,
               /^\(\s*draft\s*\)/i,
               /^(dnm|do not merge)\b/i,
+              /^\[\s*(dnm|do not merge)\s*\]/i,
+              /^\(\s*(dnm|do not merge)\s*\)/i,
             ];
 
             if (invalidPatterns.some((pattern) => pattern.test(title))) {
